@@ -334,6 +334,8 @@ class Workspace:
     def replace_in_file(self, path: str, old: str, new: str, expected_sha256: str,
                         replace_all: bool = False) -> dict[str, Any]:
         self._require_write()
+        if not isinstance(replace_all, bool):
+            raise ValueError('replace_all precisa ser booleano.')
         if not isinstance(old, str) or not old or not isinstance(new, str):
             raise ValueError('old precisa ser texto não vazio e new precisa ser texto.')
         if not isinstance(expected_sha256, str) or not expected_sha256:
@@ -352,12 +354,16 @@ class Workspace:
             raise ValueError('Trecho old não encontrado; confira espaços, indentação e quebras.')
         if count > 1 and not replace_all:
             raise ValueError(f'Trecho old aparece {count} vezes; amplie o contexto ou use replace_all.')
-        data = (text.replace(old, new) if replace_all else text.replace(old, new, 1)).encode('utf-8')
-        if len(data) > MAX_EDIT_BYTES:
+        # Calcule o tamanho UTF-8 antes de materializar uma expansão potencialmente
+        # enorme. count segue as mesmas ocorrências não sobrepostas de str.replace.
+        replacements = count if replace_all else 1
+        result_size = len(current) + replacements * (len(new.encode('utf-8')) - len(old.encode('utf-8')))
+        if result_size > MAX_EDIT_BYTES:
             raise ValueError(f'Resultado excede o limite de {MAX_EDIT_BYTES} bytes.')
+        data = text.replace(old, new, replacements).encode('utf-8')
         self._replace_existing(path, target, data, expected_sha256)
         return {'path': path, 'sha256': hashlib.sha256(data).hexdigest(), 'written': True,
-                'replacements': count if replace_all else 1}
+                'replacements': replacements}
 
     # ------------------------------------------------------------------ checks
 

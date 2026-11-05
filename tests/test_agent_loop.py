@@ -28,6 +28,22 @@ def failure(status, retry_after=None):
 
 
 class RetryTests(unittest.TestCase):
+    def test_default_never_retries_rate_limit_or_server_errors(self):
+        for status in (429, 500, 502, 503, 504):
+            with self.subTest(status=status), patch('sse_agent.agent.request.build_opener') as opener:
+                opener.return_value.open.side_effect = failure(status)
+                sleeps = []
+                client = Client('key', 'model', sleep=sleeps.append)
+                with self.assertRaisesRegex(AgentError, f'HTTP {status}'):
+                    client.complete([], [])
+                self.assertEqual(opener.return_value.open.call_count, 1)
+                self.assertEqual(sleeps, [])
+
+    def test_retry_budget_is_validated(self):
+        for retries in (-1, 4, True):
+            with self.subTest(retries=retries), self.assertRaises(AgentError):
+                Client('key', 'model', retries=retries)
+
     def client(self, retries=3):
         self.sleeps = []
         return Client('key', 'model', retries=retries, sleep=self.sleeps.append)
@@ -144,6 +160,18 @@ class CliTests(unittest.TestCase):
         with self.assertRaisesRegex(AgentError, 'ilegível'):
             parse_checks(['a="unterminated'], [])
 
+    @unittest.skipUnless(sys.platform == 'win32', 'Semântica do parser nativo Windows.')
+    def test_windows_accepts_unterminated_quote_as_one_argument(self):
+        self.assertEqual(parse_checks(['a="unterminated'], []), {'a': ['unterminated']})
+
+    def test_cli_retry_is_opt_in_and_passed_to_client(self):
+        for option, expected in (([], 0), (['--api-retries', '2'], 2)):
+            with self.subTest(option=option), patch('sse_agent.__main__.Client') as client, \
+                    patch('sse_agent.__main__.run', return_value='ok'), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(['tarefa', *option]), 0)
+                self.assertEqual(client.call_args.kwargs['retries'], expected)
+
     def test_version_flag_and_timeouts(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as caught:
@@ -151,7 +179,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 0)
         self.assertRegex(output.getvalue(), r'sse_agent \d+\.\d+\.\d+')
         self.assertEqual(positive_float('0.5'), 0.5)
-        for bad in ('0', '-1', 'nan'):
+        for bad in ('0', '-1', 'nan', 'inf', '-inf'):
             with self.assertRaises(argparse.ArgumentTypeError):
                 positive_float(bad)
 

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -20,7 +21,7 @@ def positive(value: str) -> int:
 
 def positive_float(value: str) -> float:
     number = float(value)
-    if not number > 0:
+    if not math.isfinite(number) or number <= 0:
         raise argparse.ArgumentTypeError('Use um número positivo.')
     return number
 
@@ -61,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help='Timeout de cada check, em segundos.')
     parser.add_argument('--api-timeout', type=positive_float, default=120,
                         help='Timeout de cada chamada à API, em segundos.')
+    parser.add_argument('--api-retries', type=int, choices=range(4), default=0,
+                        help='Retentativas extras para HTTP 429/5xx (padrão: 0). '
+                             'Podem gerar processamento e cobrança duplicados.')
     parser.add_argument('--max-context-bytes', type=positive, default=MAX_PAYLOAD,
                         help='Tamanho máximo do payload enviado à API; resultados antigos de '
                              'ferramentas são compactados para caber.')
@@ -78,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         client = Client(os.environ.get('SSE_API_KEY') or os.environ.get('OPENAI_API_KEY'),
                         os.environ.get('SSE_MODEL'),
                         os.environ.get('SSE_BASE_URL', 'https://api.openai.com/v1'),
-                        args.api_timeout, args.max_context_bytes)
+                        args.api_timeout, args.max_context_bytes, retries=args.api_retries)
         print('Arquivos lidos e tarefa serão enviados ao provedor configurado. '
               'Checks autorizados executam código local.', file=sys.stderr)
         result = run(client, workspace, args.task, args.max_steps,
