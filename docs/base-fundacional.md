@@ -8,9 +8,10 @@ revisado a partir de “Base de Conhecimento Fundacional: Agente de Engenharia d
 Software”, fornecido pelo proponente do projeto em 5 de novembro de 2026.
 Não deriva de uma análise da skill externa citada em CONTRIBUTING.md.
 
-As recomendações são hipóteses de trabalho orientadas por contexto. Não há agente,
-RAG, sandbox dedicada, integração MCP, atualização de memória ou avaliação de
-eficácia implementados. As ferramentas citadas são exemplos, não dependências.
+As recomendações são hipóteses de trabalho orientadas por contexto. Há uma
+[implementação inicial de agente CLI](agente-cli.md), sem RAG, sandbox dedicada,
+integração MCP ou atualização de memória. A eficácia com modelos reais ainda
+não foi avaliada. As ferramentas citadas são exemplos, não dependências.
 
 ## 1. Design e qualidade de código
 
