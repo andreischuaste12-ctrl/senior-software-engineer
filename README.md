@@ -1,5 +1,8 @@
 # senior-software-engineer
 
+Criado por **[Andrei Schuaste](https://github.com/andreischuaste12-ctrl)**.
+Projeto de código aberto, desenvolvido com a participação da comunidade.
+
 Projeto para desenvolver um agente de engenharia de software capaz de construir,
 analisar, otimizar e refatorar código em diferentes linguagens de programação.
 A eficácia deverá ser demonstrada por validações específicas para cada tarefa,
@@ -15,13 +18,17 @@ com modelos reais; testes de integração simulados não demonstram essa eficác
 
 ## Executar o agente
 
-Requer Python 3.11+ em Linux/macOS, chave de API e modelo com function calling.
+Requer Python 3.11+ em Windows, Linux ou macOS, chave de API e modelo com function calling.
 Não exige pacotes externos. Configure `SSE_API_KEY` (ou `OPENAI_API_KEY`) e
 `SSE_MODEL` no ambiente; nunca grave credenciais no repositório.
 
-```bash
-python -m sse_agent --workspace /caminho/do/projeto "Analise este projeto e proponha melhorias"
+No Windows, abra o PowerShell na pasta deste repositório:
+
+```powershell
+py -3 -m sse_agent --workspace "C:\Projetos\Meu Projeto" "Analise este projeto e proponha melhorias"
 ```
+
+Em Linux/macOS, use `python -m sse_agent` e o caminho local do projeto.
 
 Por padrão, as ferramentas de arquivo são somente leitura. Consulte o
 [guia do CLI](docs/agente-cli.md) para habilitar escrita, definir checks, selecionar
@@ -29,9 +36,12 @@ o provedor e entender os limites de execução e de envio de código à API.
 
 Para executar os testes locais, sem credenciais ou chamadas a um modelo real:
 
-```bash
-python -m unittest discover -s tests -v
+```powershell
+py -3 -m unittest discover -s tests -v
 ```
+
+O workflow de testes inclui Windows, Linux e macOS. Os resultados no Windows
+dependem da execução desse workflow; testes locais em Linux não os substituem.
 
 ## Usar a skill
 
@@ -70,6 +80,16 @@ A [base complementar](docs/conhecimento-complementar.md) registra o novo materia
 fornecido pelo usuário, sua versão original e a síntese revisada usada pela skill.
 As afirmações de versões e verificações do original não foram certificadas pelo projeto.
 
+A [matriz de URLs e endpoints](skills/senior-software-engineer/references/url-matrix.md)
+reúne referências para outros ecossistemas, registries e padrões, com o documento
+original preservado e critérios de consulta. A inclusão não ativa acessos externos;
+os endpoints e suas alegações de cobertura ainda precisam de verificação.
+
+A [revisão da segunda base](docs/revisao-base-v2.md) registra as novas orientações
+de atualidade de código, correções e verificações pontuais em fontes dos mantenedores.
+O CLI carrega a síntese revisada; o anexo original fica preservado como referência,
+sem garantia de acerto integral ou atualização automática.
+
 ## Referências e contribuições
 
 Este é um projeto de código aberto, e todas as pessoas são bem-vindas para
@@ -83,6 +103,8 @@ instalada ou incorporada. Consulte [CONTRIBUTING.md](CONTRIBUTING.md) para as
 diretrizes e o registro da referência de arquitetura pendente de análise.
 
 ## Licença
+
+Copyright 2026 Andrei Schuaste. Consulte o [aviso de autoria](NOTICE).
 
 O conteúdo original deste projeto que seus titulares puderem licenciar é
 disponibilizado sob a [Apache License 2.0](LICENSE) (`Apache-2.0`). Essa licença

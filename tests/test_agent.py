@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from sse_agent.agent import AgentError, Client, run
 from sse_agent.tools import Workspace
+from sse_agent.platforms import split_command
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -43,11 +44,48 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual((self.root / 'sample.py').read_text(), 'original\n')
 
     def test_boundaries_secrets_and_symlinks(self):
-        (self.root / 'link').symlink_to(self.root / 'sample.py')
         for path in ('../outside', '/etc/passwd', '.git/config', '.env', '.env.local',
-                     'credentials.json', 'private.key', 'link'):
+                     'credentials.json', 'private.key', r'..\outside', r'C:\Windows\win.ini',
+                     r'C:relative', r'\\server\share\file', 'sample.py:stream',
+                     '.GIT/config', '.git./config', 'NUL', 'CON.txt', 'file. '):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 self.workspace.read_file(path)
+
+    def test_symlink_is_not_read_or_listed(self):
+        try:
+            (self.root / 'link').symlink_to(self.root / 'sample.py')
+        except OSError as error:
+            if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Criação de symlink requer Developer Mode ou privilégio no Windows.')
+            raise
+        with self.assertRaises(ValueError):
+            self.workspace.read_file('link')
+        self.assertNotIn('link', self.workspace.list_files()['files'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Junction é um recurso do Windows.')
+    def test_windows_junction_is_not_read_or_listed(self):
+        with tempfile.TemporaryDirectory() as outside:
+            (Path(outside) / 'private.txt').write_text('outside', encoding='utf-8')
+            junction = self.root / 'junction'
+            created = subprocess.run(['cmd.exe', '/d', '/c', 'mklink', '/J', str(junction), outside],
+                                     capture_output=True)
+            self.assertEqual(created.returncode, 0, created.stderr)
+            try:
+                with self.assertRaises(ValueError):
+                    self.workspace.read_file('junction/private.txt')
+                self.assertFalse(any(name.startswith('junction/') for name in
+                                     self.workspace.list_files()['files']))
+            finally:
+                junction.rmdir()
+
+    def test_unicode_and_space_paths_and_windows_separators(self):
+        folder = self.root / 'código com espaços'
+        folder.mkdir()
+        self.workspace.write_file('código com espaços/ação.py', 'print("olá")\n', None)
+        original = self.workspace.read_file('código com espaços\\ação.py')
+        self.workspace.write_file('código com espaços/ação.py', 'print("mundo")\n', original['sha256'])
+        self.assertEqual(self.workspace.read_file('código com espaços/ação.py')['content'],
+                         'print("mundo")\n')
 
     def test_listing_omits_protected_files(self):
         (self.root / '.env').write_text('not-for-the-model')
@@ -79,6 +117,26 @@ class WorkspaceTests(unittest.TestCase):
         result = workspace.run_check('slow')
         self.assertTrue(result['timed_out'])
         self.assertNotEqual(result['exit_code'], 0)
+
+    def test_timeout_stops_child_before_it_can_write(self):
+        import time
+        child = 'import time; from pathlib import Path; time.sleep(2); Path("escaped").touch()'
+        parent = ('import subprocess,sys,time; '
+                  f'subprocess.Popen([sys.executable,"-c",{child!r}]); '
+                  'print("started", flush=True); time.sleep(10)')
+        workspace = Workspace(self.root, checks={'tree': [sys.executable, '-c', parent]}, timeout=1)
+        result = workspace.run_check('tree')
+        self.assertTrue(result['timed_out'])
+        self.assertIn('started', result['output'])
+        time.sleep(2)
+        self.assertFalse((self.root / 'escaped').exists())
+
+    def test_native_command_quoting_roundtrip(self):
+        import shlex
+        parts = [r'C:\Program Files\Python\python.exe', '-c', 'print("olá mundo")',
+                 'argument with spaces', '', 'trailing\\']
+        command = subprocess.list2cmdline(parts) if os.name == 'nt' else shlex.join(parts)
+        self.assertEqual(split_command(command), parts)
 
 
 class AgentTests(unittest.TestCase):
@@ -112,9 +170,9 @@ class AgentTests(unittest.TestCase):
     def test_cli_full_http_tool_cycle(self):
         requests = []
         failures = []
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(prefix='agente ação ') as directory:
             root = Path(directory)
-            (root / 'example.py').write_text('before\n')
+            (root / 'example.py').write_bytes(b'before\n')
             original_hash = hashlib.sha256(b'before\n').hexdigest()
             actions = [('list_files', {}), ('read_file', {'path': 'example.py'}),
                        ('write_file', {'path': 'example.py', 'content': 'after\n',
@@ -153,10 +211,12 @@ class AgentTests(unittest.TestCase):
                 environment = dict(os.environ, SSE_API_KEY='fake-test-key', SSE_MODEL='fake-model',
                                    SSE_BASE_URL=f'http://127.0.0.1:{server.server_port}/v1')
                 command = [sys.executable, '-m', 'sse_agent', '--workspace', directory,
-                           '--allow-write', '--check', f'verify={sys.executable} -c "print(123)"',
+                           '--allow-write', '--check-json',
+                           'verify=' + json.dumps([sys.executable, '-c', 'print("ação 123")']),
                            'Altere example.py e valide.']
                 result = subprocess.run(command, cwd=Path(__file__).resolve().parent.parent,
-                                        env=environment, capture_output=True, text=True, timeout=15)
+                                        env=environment, capture_output=True, text=True,
+                                        encoding='utf-8', timeout=15)
             finally:
                 server.shutdown()
                 server.server_close()
@@ -173,7 +233,7 @@ class AgentTests(unittest.TestCase):
             outputs = [json.loads(message['content']) for message in requests[-1]['messages']
                        if message['role'] == 'tool']
             self.assertEqual(outputs[-1]['exit_code'], 0)
-            self.assertEqual(outputs[-1]['output'].strip(), '123')
+            self.assertEqual(outputs[-1]['output'].strip(), 'ação 123')
 
     def test_http_failure_and_invalid_response(self):
         client = Client('not-to-be-printed', 'model')

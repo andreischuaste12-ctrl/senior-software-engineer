@@ -2,10 +2,12 @@
 
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import stat
 import subprocess
 import tempfile
+
+from .platforms import process_options, stop_process_tree
 
 
 MAX_FILE_BYTES = 64_000
@@ -15,9 +17,18 @@ EXCLUDED = {'.git', '.aws', '.ssh', '.venv', 'venv', 'node_modules', '__pycache_
 
 def sensitive(part):
     lower = part.lower()
-    return (part in EXCLUDED or lower.startswith('.env') or
+    return (lower in EXCLUDED or lower.startswith('.env') or
             lower.endswith(('.pem', '.key', '.p12', '.pfx')) or
             lower in {'credentials', 'credentials.json', 'secrets.json', 'id_rsa', 'id_ed25519'})
+
+
+def linked(path):
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400))
 
 
 def schema(name, description, properties, required):
@@ -39,14 +50,19 @@ class Workspace:
     def path(self, relative):
         if not isinstance(relative, str) or not relative or '\x00' in relative:
             raise ValueError('Caminho relativo inválido.')
-        path = Path(relative)
-        if path.is_absolute() or any(part == '..' or sensitive(part) for part in path.parts):
+        path = Path(relative.replace('\\', '/'))
+        reserved = {'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'} | {
+            prefix + number for prefix in ('COM', 'LPT') for number in '123456789¹²³'}
+        if (path.is_absolute() or PureWindowsPath(relative).anchor or
+                any(part == '..' or sensitive(part) or ':' in part or
+                    part.endswith((' ', '.')) or part.split('.')[0].upper() in reserved
+                    for part in path.parts)):
             raise ValueError('Caminho fora do escopo ou arquivo protegido.')
         candidate = self.root
         for part in path.parts:
             candidate = candidate / part
-            if candidate.is_symlink():
-                raise ValueError('Links simbólicos não são permitidos nas ferramentas de arquivo.')
+            if linked(candidate):
+                raise ValueError('Links simbólicos e reparse points não são permitidos nas ferramentas de arquivo.')
         if not candidate.resolve().is_relative_to(self.root):
             raise ValueError('Caminho fora do workspace.')
         return candidate
@@ -76,12 +92,12 @@ class Workspace:
         scanned = 0
         for base, dirs, files in os.walk(self.root, followlinks=False):
             dirs[:] = sorted(d for d in dirs if not sensitive(d) and
-                             not (Path(base) / d).is_symlink())
+                             not linked(Path(base) / d))
             for name in sorted(files):
                 scanned += 1
                 if scanned > 10_000:
                     return {'files': found, 'truncated': True}
-                if sensitive(name) or (Path(base) / name).is_symlink():
+                if sensitive(name) or linked(Path(base) / name):
                     continue
                 found.append((Path(base) / name).relative_to(self.root).as_posix())
                 if len(found) >= 1000:
@@ -115,23 +131,22 @@ class Workspace:
             if not expected_sha256 or expected_sha256 != current['sha256']:
                 raise ValueError('Arquivo mudou ou não foi lido; leia novamente antes de gravar.')
             mode = stat.S_IMODE(target.stat().st_mode)
-            with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
-                temporary = Path(stream.name)
-                try:
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+                    temporary = Path(stream.name)
                     stream.write(data)
                     stream.flush()
-                    os.fchmod(stream.fileno(), mode)
-                except BaseException:
-                    temporary.unlink(missing_ok=True)
-                    raise
-            try:
-                # Reconfere a fronteira imediatamente antes da substituição.
+                    if os.name != 'nt':
+                        os.fchmod(stream.fileno(), mode)
+                # Feche o handle antes de substituir/remover o arquivo no Windows.
                 self.path(path)
                 if self.read_file(path)['sha256'] != expected_sha256:
                     raise ValueError('Arquivo alterado durante a gravação.')
                 os.replace(temporary, target)
             finally:
-                temporary.unlink(missing_ok=True)
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         else:
             if expected_sha256 is not None:
                 raise ValueError('Arquivo não existe; para criar use expected_sha256 null.')
@@ -143,24 +158,20 @@ class Workspace:
         if name not in self.checks:
             raise ValueError('Check não autorizado.')
         environment = {key: value for key, value in os.environ.items()
-                       if key not in {'SSE_API_KEY', 'OPENAI_API_KEY'}}
+                       if key.upper() not in {'SSE_API_KEY', 'OPENAI_API_KEY'}}
+        environment['PYTHONIOENCODING'] = 'utf-8'
         with tempfile.TemporaryFile() as output:
             process = subprocess.Popen(self.checks[name], cwd=self.root, stdin=subprocess.DEVNULL,
                                        stdout=output, stderr=subprocess.STDOUT,
-                                       start_new_session=True, env=environment)
+                                       env=environment, **process_options())
             timed_out = False
             try:
                 process.wait(timeout=self.timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
-                # O CLI inicial suporta sistemas POSIX; encerra também subprocessos.
-                import signal
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+                stop_process_tree(process)
             except BaseException:
-                import signal
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+                stop_process_tree(process)
                 raise
             output.seek(0)
             data = output.read(16_001)

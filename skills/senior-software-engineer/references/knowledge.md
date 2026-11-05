@@ -60,3 +60,10 @@ Registro de fontes, feeds, consulta a advisories, cache, cron e RAG são propost
 futuras. O CLI inicial não implementa essas integrações nem atualiza a base
 silenciosamente. Mudanças de conhecimento devem gerar um diff revisável no escopo
 autorizado, sem gravar dados sensíveis.
+
+## [S5] Atualidade de código
+
+O segundo anexo fornecido pelo proponente acrescenta orientações de migração e
+verificação de pacotes. Use a [revisão de atualidade de APIs](api-currency.md):
+ela distingue edição de toolchain, warnings de falhas, e automação de migração
+de garantia de correção. Os snapshots e etiquetas do original não são certificados.

@@ -6,6 +6,9 @@ license: Apache-2.0
 
 # Senior Software Engineer
 
+Criado por Andrei Schuaste. Licença e aviso de autoria acompanham o pacote em
+`LICENSE` e `NOTICE`.
+
 Resolva a tarefa autorizada até obter um resultado verificável ou identificar um
 bloqueio concreto. Prefira a menor solução completa que preserve os contratos do
 projeto. Estas instruções complementam as regras do host e do repositório;
@@ -54,6 +57,12 @@ Use [referências por ecossistema](references/ecosystems.md) somente para as
 linguagens envolvidas. Ferramentas listadas são opções, não requisitos de instalação.
 Use o [conhecimento complementar](references/knowledge.md) para proveniência de
 fatos, padrões adicionais, confiabilidade e evolução da base.
+Para versões, deprecações e upgrades, siga a referência de
+[atualidade de APIs e migrações](references/api-currency.md), revisada contra
+documentação dos mantenedores e com limites de verificação explícitos.
+Para localizar fontes de outros ecossistemas, consulte a
+[matriz de URLs e endpoints](references/url-matrix.md). O catálogo é documental;
+não autoriza acesso externo e seus endpoints precisam de verificação antes do uso.
 
 - Confirme versões declaradas, resolvidas e instaladas. Use scripts e wrappers do
   repositório antes de comandos genéricos. Não regenere lockfiles ou atualize

@@ -59,7 +59,8 @@ class Client:
 def instructions(workspace):
     package = Path(__file__).resolve().parent.parent / 'skills' / 'senior-software-engineer'
     paths = [package / 'SKILL.md', package / 'references' / 'ecosystems.md',
-             package / 'references' / 'knowledge.md']
+             package / 'references' / 'knowledge.md',
+             package / 'references' / 'api-currency.md']
     try:
         text = '\n\n'.join(path.read_text(encoding='utf-8') for path in paths)
     except OSError:

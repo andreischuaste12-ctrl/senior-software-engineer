@@ -1,0 +1,2 @@
+# Preserve the exact uploaded source, including its Windows line endings.
+skills/senior-software-engineer/references/sources/url-matrix-original.md -text whitespace=cr-at-eol

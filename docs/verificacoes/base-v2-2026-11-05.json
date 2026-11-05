@@ -1,0 +1,170 @@
+{
+  "consulted_on": "2026-11-05",
+  "scope": "Verificações pontuais; não certifica integralmente o anexo.",
+  "original_file": "base-conhecimento-engenharia-software-v2-original.md",
+  "original_sha256": "e09731d10251938f07f8de32ef2c6150c4a825eb23024d95add07e57653d26c1",
+  "sources": [
+    {
+      "id": "go-mod",
+      "url": "https://go.dev/ref/mod",
+      "final_url": "https://go.dev/ref/mod",
+      "status": 200,
+      "bytes": 283851,
+      "truncated": false,
+      "sha256": "76800e4390a4eee6fadd8778cacc668cf8cd2aaadb210ebf8c41fc9ed89d0a6e",
+      "excerpts": [
+        " that require it # to versions that don't require it. $ go get golang.org/x/text@none # Upgrade the minimum required Go version for the main module. $ go get go # Upgrade the suggested Go toolchain, leaving the minimum Go version alone. $ go get toolchain # Upgrade to the latest patch release of the suggested Go toolchain. $ go get toolchain@patch The go get command updates module dependencies in the go.mod file for the main module , then builds and installs packages listed on the command line. The first step is to determine which modules to up",
+        "odule&rsquo;s path (the go.mod file&rsquo;s module line). The -go=version flag sets the expected Go language version. The -require=path@version and -droprequire=path flags add and drop a requirement on the given module path and version. Note that -require overrides any existing requirements on path . These flags are mainly for tools that understand the module graph. Users should prefer go get path@version or go get path@none , which make other go.mod adjustments as needed to satisfy constraints imposed by other modules. See go get . The -exclud"
+      ]
+    },
+    {
+      "id": "rust-edition",
+      "url": "https://doc.rust-lang.org/cargo/reference/manifest.html",
+      "final_url": "https://doc.rust-lang.org/cargo/reference/manifest.html",
+      "status": 200,
+      "bytes": 59809,
+      "truncated": false,
+      "sha256": "faabed42690ed91a33349e0a00980008a451332bcbab7ca215facee9c3d473b6",
+      "excerpts": [
+        "ion — The version of the package. authors — The authors of the package. edition — The Rust edition. rust-version — The minimal supported Rust version. description — A description of the package. documentation — URL of the package documentation. readme — Path to the package’s README file. homepage — URL of the package homepage. repository — URL of the package source repository. license — The package license. license-file — Path to the text of the license. keywords — Keywords for the package. categories — Categories of the package. workspace — Pa",
+        "/crates in the package, including test suites, benchmarks, binaries, examples, etc. [package] # ... edition = '2024' Most manifests have the edition field filled in automatically by cargo new with the latest stable edition. By default cargo new creates a manifest with the 2024 edition currently. If the edition field is not present in Cargo.toml , then the 2015 edition is assumed for backwards compatibility. Note that all manifests created with cargo new will not use this historical fallback because they will have edition explicitly specified to"
+      ]
+    },
+    {
+      "id": "python-warnings",
+      "url": "https://docs.python.org/3/library/warnings.html",
+      "final_url": "https://docs.python.org/3/library/warnings.html",
+      "status": 200,
+      "bytes": 99512,
+      "truncated": false,
+      "sha256": "3cc53d76dae82cce39dadd3f9b558f2b54840ecbee8ea5a7cc09dd431c65d88f",
+      "excerpts": [
+        "or warnings about deprecated features when those warnings are intended for other Python developers (ignored by default, unless triggered by code in __main__ ). PendingDeprecationWarning Base class for warnings about features that will be deprecated in the future (ignored by default). SyntaxWarning Base class for warnings about dubious syntax (typically emitted when compiling Python source code, and hence may not be suppressed by runtime filters). RuntimeWarning Base class for warnings about dubious runtime behavior. FutureWarning Base class for",
+        "ge what action is taken for encountered warnings you can change what argument is passed to -W (e.g. -W error ). See the -W flag for more details on what is possible. Available Functions ¶ warnings. warn ( message , category = None , stacklevel = 1 , source = None , * , skip_file_prefixes = () ) ¶ Issue a warning, or maybe ignore it or raise an exception. The category argument, if given, must be a warning category class ; it defaults to UserWarning . Alternatively, message can be a Warning instance, in which case category will be ignored and mes"
+      ]
+    },
+    {
+      "id": "cargo-fix",
+      "url": "https://doc.rust-lang.org/cargo/commands/cargo-fix.html",
+      "final_url": "https://doc.rust-lang.org/cargo/commands/cargo-fix.html",
+      "status": 200,
+      "bytes": 52239,
+      "truncated": false,
+      "sha256": "3954e98b836f29a0ab69fa65289b8c5c5e7be57d09f9da2205d8f95faa54a742",
+      "excerpts": [
+        " be used to migrate a package from one edition to the next. The general procedure is: Run cargo fix --edition . Consider also using the --all-features flag if your project has multiple features. You may also want to run cargo fix --edition multiple times with different --target flags if your project has platform-specific code gated by cfg attributes. Modify Cargo.toml to set the edition field to the new edition. Run your project tests to verify that everything still works. If new warnings are issued, you may want to consider running cargo fix a",
+        "he preferred style for the current edition. --allow-no-vcs Fix code even if a VCS was not detected. --allow-dirty Fix code even if the working directory has changes (including staged changes). --allow-staged Fix code even if the working directory has staged changes. Package Selection By default, when no package selection options are given, the packages selected depend on the selected manifest file (based on the current working directory if --manifest-path is not given). If the manifest is the root of a workspace then the workspaces default memb"
+      ]
+    },
+    {
+      "id": "ruff-fix",
+      "url": "https://docs.astral.sh/ruff/linter/",
+      "error": "HTTPError: HTTP Error 403: Forbidden"
+    },
+    {
+      "id": "python-releases",
+      "url": "https://www.python.org/downloads/",
+      "final_url": "https://www.python.org/downloads/",
+      "status": 200,
+      "bytes": 224618,
+      "truncated": false,
+      "sha256": "c942274430346ca8fbee27e51fc0dfdec0d4d8adc2b880d929f07d47fb0894a2",
+      "excerpts": [
+        " Windows and Mac versions, and is the starting point for ports to all other platforms. Download the latest Python 3 source. Read more Alternative implementations This site hosts the \"traditional\" implementation of Python (nicknamed CPython). A number of alternative implementations are available as well. Read more History Python was created in the early 1990s by Guido van Rossum at Stichting Mathematisch Centrum in the Netherlands as a successor of a language called ABC. Guido remains Python’s principal author, although it includes many contribu",
+        "Submit an Event Download the latest version for Android Download the latest source release Download Python 3.15.2 Download the latest version for Windows Download Python install manager Or get the standalone installer for Python 3.15.2 Download the latest version for iOS Download the latest version for macOS Download Python 3.15.2 Download the latest version of Python Download Python 3.15.2 Looking for Python with a different OS? Python for Windows , Linux/Unix , macOS , Android , iOS , other Want to help test development versions of Python 3.1"
+      ]
+    },
+    {
+      "id": "go-releases",
+      "url": "https://go.dev/dl/",
+      "final_url": "https://go.dev/dl/",
+      "status": 200,
+      "bytes": 1500001,
+      "truncated": true,
+      "sha256": "c6fe5683180a6ca5b968f601bf3df806d9715d8534c5a17a223d290f408ea956",
+      "excerpts": [
+        "se different ones. Featured downloads Microsoft Windows Windows 10 or later, Intel 64-bit processor go1.27.3.windows-amd64.msi Apple macOS (ARM64) macOS 13 or later, Apple 64-bit processor go1.27.3.darwin-arm64.pkg Apple macOS (x86-64) macOS 13 or later, Intel 64-bit processor go1.27.3.darwin-amd64.pkg Linux Linux 3.2 or later, Intel 64-bit processor go1.27.3.linux-amd64.tar.gz Source go1.27.3.src.tar.gz Stable versions go1.27.3 go1.27.3 File name Kind OS Arch Size SHA256 Checksum go1.27.3.src.tar.gz Source 34MB 6e7749035cf360f06b2575d162ea79df"
+      ]
+    },
+    {
+      "id": "node-releases",
+      "url": "https://nodejs.org/en/about/previous-releases",
+      "final_url": "https://nodejs.org/en/about/previous-releases",
+      "status": 200,
+      "bytes": 286391,
+      "truncated": false,
+      "sha256": "208d618d1ab5982536631873d3838c055dd9f52a3ec666b272097ed3b348ca66",
+      "excerpts": [
+        "te to Node.js Code of Conduct Node.js Releases Commercial support for versions past the Maintenance LTS phase is available through our OpenJS Ecosystem Sustainability Program partners Major Node.js versions enter Current release status for six months, which gives library authors time to add support for them. Historically (up to Node.js 26), odd-numbered releases (9, 11, etc.) become unsupported after six months, and even-numbered releases (10, 12, etc.) move to Active LTS status and are ready for general use. Starting with Node.js 27, the relea",
+        "nch? Recommended and community installation methods Navigate to Home About Node.js Node.js Releases v26.13.0 Latest LTS v27.0.0-alpha.0.0.0 Latest Alpha Copyright OpenJS Foundation and Node.js contributors. All rights reserved. The OpenJS Foundation has registered trademarks and uses trademarks. For a list of trademarks of the OpenJS Foundation , please see our Trademark Policy and Trademark List . Trademarks and logos not indicated on the list of OpenJS Foundation trademarks are trademarks™ or registered® trademarks of their respective holders"
+      ]
+    },
+    {
+      "id": "rust-releases",
+      "url": "https://blog.rust-lang.org/releases/latest/",
+      "final_url": "https://blog.rust-lang.org/releases/latest/",
+      "status": 200,
+      "bytes": 248,
+      "truncated": false,
+      "sha256": "eb251e6c3c93a3ec67c5990aa62eeb14cad1ea844dfd34c5461e3ccef50dcc77",
+      "excerpts": []
+    },
+    {
+      "id": "typescript-release",
+      "url": "https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/",
+      "final_url": "https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/",
+      "status": 200,
+      "bytes": 285925,
+      "truncated": false,
+      "sha256": "599d6e3ee76b488722b753d3f3da1f696e005dc8df1eff712f0f203cf3a0210b",
+      "excerpts": [
+        "1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } Announcing TypeScript 7.0 - TypeScript {\"@context\":\"https:\\/\\/schema.org\",\"@graph\":[{\"@type\":\"Article\",\"@id\":\"https:\\/\\/devblogs.microsoft.com\\/typescript\\/announcing-typescript-7-0\\/#article\",\"isPartOf\":{\"@id\":\"https:\\/\\/devblogs.microsoft.com\\/typescript\\/announcing-typescript-7-0\\/\"},\"author\":{\"name\":\"Daniel Rosenwasser\",\"@id\":\"https:\\/\\/devblogs.microsoft.com\\/typescript\\/#\\/schema\\/person\\/12dfa7bf0f253",
+        "dule && module.exports && (module.exports = c) }(window, function (a, b) { \"use strict\"; if (b.getElementsByClassName) { var c, d, e = b.documentElement, f = a.Date, g = a.HTMLPictureElement, h = \"addEventListener\", i = \"getAttribute\", j = a[h], k = a.setTimeout, l = a.requestAnimationFrame || k, m = a.requestIdleCallback, n = /^picture$/i, o = [\"load\", \"error\", \"lazyincluded\", \"_lazyloaded\"], p = {}, q = Array.prototype.forEach, r = function (a, b) { return p[b] || (p[b] = n",
+        "Side with TypeScript 6.0 While TypeScript 7.0 is here, it does not ship with an API. We expect TypeScript 7.1 to ship with a new (and different) API, but until then we have made it a priority to ensure TypeScript can be run side-by-side with TypeScript 6.0 for utilities that still need some programmatic access to the compiler (such as typescript-eslint). As part of the 6.0/7.0 transition process, we’ve published a new compatibility package, @typescript/typescript6 . This pack"
+      ]
+    },
+    {
+      "id": "jdk-releases",
+      "url": "https://openjdk.org/projects/jdk/",
+      "error": "HTTPError: HTTP Error 403: Forbidden"
+    },
+    {
+      "id": "java-support",
+      "url": "https://www.oracle.com/java/technologies/java-se-support-roadmap.html",
+      "final_url": "https://www.oracle.com/java/technologies/java-se-support-roadmap.html",
+      "status": 200,
+      "bytes": 49355,
+      "truncated": false,
+      "sha256": "ef1c51ac772f782c26b1e50117da5d891e1e7946c0a665b23e2fa303f86935f6",
+      "excerpts": [
+        " . For product releases after Java SE 8, Oracle will provide Long-Term-Support (LTS) on specific releases. Java SE 8, 11, 17, 21, and 25 are LTS releases. Oracle intends to make future LTS releases every two years meaning the next planned LTS release is Java 29 in September 2027. For the purposes of Oracle Premier Support, non-LTS releases are considered a cumulative set of implementation enhancements of the most recent LTS release. Once a new feature release is made availabl",
+        "eptember 2024 - September 2025 Not Available Indefinite 25 (LTS) September 2025 September 2030**** September 2033**** Indefinite 26 (non-LTS) March 2026 September 2026 Not Available Indefinite 27 (non-LTS)*** September 2026 March 2027 Not Available Indefinite 28 (non-LTS)*** March 2027 September 2027 Not Available Indefinite 29 (LTS)*** September 2027 September 2032**** September 2035**** Indefinite End of Permissive Licensing of Java SE 8 Java SE 8 has gone through the End o"
+      ]
+    },
+    {
+      "id": "ruff-primary",
+      "url": "https://raw.githubusercontent.com/astral-sh/ruff/main/docs/linter.md",
+      "final_url": "https://raw.githubusercontent.com/astral-sh/ruff/main/docs/linter.md",
+      "status": 200,
+      "bytes": 28858,
+      "truncated": false,
+      "sha256": "a79e2d8c1dec885f3b666be975bf243d46c959600c5223090b431e4aab5f468d",
+      "excerpts": [
+        "fix is categorized as unsafe. Ruff only applies safe fixes by default. To apply unsafe fixes as well, enable [`unsafe-fixes`](settings.md#unsafe-fixes) in your configuration file or pass the `--unsafe-fixes` flag alongside `--fix`: ```console # Apply unsafe fixes ruff check --fix --unsafe-fixes ``` The default `full` output format shows all suggested fixes, regardless of the `unsafe-fixes` setting. This includes fixes that require manual review and cannot be applied automatic",
+        "k error handling upstream, this fix is categorized as unsafe. Ruff only applies safe fixes by default. To apply unsafe fixes as well, enable [`unsafe-fixes`](settings.md#unsafe-fixes) in your configuration file or pass the `--unsafe-fixes` flag alongside `--fix`: ```console # Apply unsafe fixes ruff check --fix --unsafe-fixes ``` The default `full` output format shows all suggested fixes, regardless of the `unsafe-fixes` setting. This includes fixes that require manual review"
+      ]
+    },
+    {
+      "id": "rust-release-target",
+      "url": "https://blog.rust-lang.org/2026/10/15/Rust-1.99.1/",
+      "final_url": "https://blog.rust-lang.org/2026/10/15/Rust-1.99.1/",
+      "status": 200,
+      "bytes": 10920,
+      "truncated": false,
+      "sha256": "1b4bcf8f6c0cc680ca6bafda173750d059db641f1d69d23f556b858a14461db1",
+      "excerpts": [
+        " Announcing Rust 1.99.1 | Rust Blog Rust Blog Rust Install Learn Tools Governance Community 🖌 Light Dark System Announcing Rust 1.99.1 Oct. 15, 2026 &middot; The Rust Release Team The Rust team has published a new point release of Rust, 1.99.1. Rust is a programming language that is empowering everyone to build reliable and efficient software. If you have a previous version of Rust installed via rustup, getting Rust 1.99.1 is as easy as: rustup update stable If you don't have it already, you can get rustup from the appropriate page on our website. What's in 1.99.1 Rust 1.99.1 fixes the following regressions from prior releases: Missing symbol wcslen : Some Ru"
+      ]
+    }
+  ]
+}

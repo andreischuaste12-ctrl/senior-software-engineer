@@ -1,12 +1,13 @@
 """Execute com python -m sse_agent --help."""
 
 import argparse
+import json
 import os
-import shlex
 import sys
 
 from .agent import AgentError, Client, run
 from .tools import Workspace
+from .platforms import split_command
 
 
 def positive(value):
@@ -23,19 +24,22 @@ def main(argv=None):
     parser.add_argument('--allow-write', action='store_true', help='Autorize criar/substituir arquivos de texto.')
     parser.add_argument('--check', action='append', default=[], metavar='NOME=COMANDO',
                         help='Autorize um comando sem shell, por exemplo tests=python -m unittest discover.')
+    parser.add_argument('--check-json', action='append', default=[], metavar='NOME=JSON',
+                        help='Autorize argumentos em array JSON, preservando caminhos com espaços.')
     parser.add_argument('--max-steps', type=positive, default=12)
     parser.add_argument('--timeout', type=positive, default=60, help='Timeout por chamada de API/check, em segundos.')
     args = parser.parse_args(argv)
     try:
-        if os.name != 'posix':
-            raise AgentError('Esta versão do CLI suporta Linux e macOS (POSIX).')
         if not args.task.strip():
             raise AgentError('Informe uma tarefa não vazia.')
         checks = {}
-        for item in args.check:
+        for item, as_json in [(item, False) for item in args.check] + [
+                (item, True) for item in args.check_json]:
             name, separator, command = item.partition('=')
-            parts = shlex.split(command)
-            if not separator or not name.strip() or name in checks or not parts:
+            parts = json.loads(command) if as_json else split_command(command)
+            if (not separator or not name.strip() or name in checks or
+                    not isinstance(parts, list) or not parts or
+                    any(not isinstance(part, str) or '\x00' in part for part in parts) or not parts[0]):
                 raise AgentError('--check exige NOME=COMANDO com nome único e comando não vazio.')
             checks[name] = parts
         workspace = Workspace(args.workspace, args.allow_write, checks, args.timeout)
@@ -57,4 +61,8 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    # UTF-8 inclusive com stdout redirecionado no Windows.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     raise SystemExit(main())
