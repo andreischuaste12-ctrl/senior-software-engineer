@@ -13,6 +13,19 @@ Ainda não há agente implementado, skills próprias, dependências ou testes de
 aplicação. A criação de skills e a avaliação de desempenho por linguagem serão
 tratadas em etapas futuras.
 
+## Base de conhecimento
+
+A [base fundacional de engenharia](docs/base-fundacional.md) reúne princípios de
+design, critérios para padrões de projeto, orientações por linguagem e um fluxo
+de consulta e validação de APIs. Ela foi revisada a partir do texto fornecido
+pelo proponente do projeto.
+
+A [proposta de instruções operacionais](docs/instrucoes-operacionais.md) traduz
+essa base em um roteiro para o futuro agente. Ambos são documentos de referência;
+não ativam um agente, integrações externas ou atualização automática de memória.
+A cobertura inicial inclui Python, JavaScript/TypeScript, Go, Rust, Java e C#/.NET,
+sem representar suporte implementado ou eficácia comprovada nessas linguagens.
+
 ## Referências e contribuições
 
 Este é um projeto de código aberto, e todas as pessoas são bem-vindas para
