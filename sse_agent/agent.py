@@ -1,8 +1,21 @@
 """Cliente Chat Completions e loop limitado de chamadas de ferramentas."""
 
+from collections.abc import Callable
+import contextlib
 import json
 from pathlib import Path
+import time
+from typing import Any
 from urllib import error, parse, request
+
+MAX_PAYLOAD = 250_000
+RETRY_STATUS = {429, 500, 502, 503, 504}
+MAX_RETRY_DELAY = 30.0
+# Campos de resultados antigos de ferramentas que sobrevivem à compactação de contexto.
+KEEP_KEYS = ('path', 'sha256', 'written', 'replacements', 'name', 'exit_code',
+             'timed_out', 'error', 'total_lines')
+OMITTED_NOTE = 'conteúdo removido para caber no contexto; leia novamente se precisar'
+BULKY_ARGUMENTS = {'write_file': ('content',), 'replace_in_file': ('old', 'new')}
 
 
 class AgentError(Exception):
@@ -10,12 +23,24 @@ class AgentError(Exception):
 
 
 class NoRedirect(request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(self, req: Any, fp: Any, code: Any, msg: Any, headers: Any,
+                         newurl: Any) -> Any:
         raise AgentError('Redirecionamento da API recusado; confira SSE_BASE_URL.')
 
 
+def retry_delay(attempt: int, header: str | None) -> float:
+    """Espera antes da nova tentativa: Retry-After (segundos) ou backoff exponencial."""
+    with contextlib.suppress(TypeError, ValueError):
+        if header is not None and float(header) >= 0:
+            return min(float(header), MAX_RETRY_DELAY)
+    return min(2.0 ** attempt, MAX_RETRY_DELAY)
+
+
 class Client:
-    def __init__(self, api_key, model, base_url='https://api.openai.com/v1', timeout=60):
+    def __init__(self, api_key: str | None, model: str | None,
+                 base_url: str = 'https://api.openai.com/v1', timeout: float = 120,
+                 max_payload: int = MAX_PAYLOAD, retries: int = 3,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
         url = parse.urlsplit(base_url)
         local_http = url.scheme == 'http' and url.hostname in {'localhost', '127.0.0.1', '::1'}
         if (not url.hostname or url.username or url.password or url.query or url.fragment or
@@ -27,36 +52,58 @@ class Client:
         self.api_key, self.model = api_key, model
         self.endpoint = base_url.rstrip('/') + '/chat/completions'
         self.timeout = timeout
+        self.max_payload = max_payload
+        self.retries = retries
+        self.sleep = sleep
 
-    def complete(self, messages, tools):
-        payload = json.dumps({'model': self.model, 'messages': messages,
-                              'tools': tools, 'tool_choice': 'auto'}).encode('utf-8')
-        if len(payload) > 250_000:
-            raise AgentError('Limite local de contexto excedido; reduza o escopo da tarefa.')
+    def _post(self, payload: bytes) -> bytes:
+        """Envia a requisição. Só repete status que indicam rejeição antes do processamento
+        (429/5xx), com backoff; timeouts e falhas de conexão nunca são repetidos, pois a
+        chamada pode ter sido processada e cobrada."""
         req = request.Request(self.endpoint, data=payload, headers={
             'Content-Type': 'application/json', 'Authorization': 'Bearer ' + self.api_key})
+        for attempt in range(self.retries + 1):
+            try:
+                with request.build_opener(NoRedirect).open(req, timeout=self.timeout) as response:
+                    raw: bytes = response.read(2_000_001)
+                if len(raw) > 2_000_000:
+                    raise AgentError('Resposta da API excede o limite local.')
+                return raw
+            except error.HTTPError as exc:
+                status = exc.code
+                header = exc.headers.get('Retry-After') if exc.headers else None
+                with contextlib.suppress(Exception):
+                    exc.close()
+                if status in RETRY_STATUS and attempt < self.retries:
+                    self.sleep(retry_delay(attempt, header))
+                    continue
+                raise AgentError(f'API retornou HTTP {status}; confira endpoint, modelo, '
+                                 'acesso e quota.') from None
+            except (error.URLError, TimeoutError, OSError):
+                raise AgentError('Falha de conexão ou timeout da API; nenhuma repetição '
+                                 'automática.') from None
+        raise AgentError('Tentativas esgotadas.')  # inalcançável; satisfaz o type checker
+
+    def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
+        payload = json.dumps({'model': self.model, 'messages': messages,
+                              'tools': tools, 'tool_choice': 'auto'}).encode('utf-8')
+        if len(payload) > self.max_payload:
+            raise AgentError('Limite local de contexto excedido; reduza o escopo da tarefa.')
+        raw = self._post(payload)
         try:
-            with request.build_opener(NoRedirect).open(req, timeout=self.timeout) as response:
-                raw = response.read(2_000_001)
-            if len(raw) > 2_000_000:
-                raise AgentError('Resposta da API excede o limite local.')
             result = json.loads(raw)
             choice = result['choices'][0]
-            message = choice['message']
+            message: dict[str, Any] = choice['message']
             if message.get('role') != 'assistant':
                 raise ValueError('role inválido')
             if choice.get('finish_reason') not in {'stop', 'tool_calls'}:
                 raise AgentError('A API interrompeu a resposta; tarefa incompleta.')
             return message
-        except error.HTTPError as exc:
-            raise AgentError(f'API retornou HTTP {exc.code}; confira endpoint, modelo, acesso e quota.') from None
-        except (error.URLError, TimeoutError, OSError):
-            raise AgentError('Falha de conexão ou timeout da API; nenhuma repetição automática.') from None
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             raise AgentError('Resposta inválida para o protocolo Chat Completions com ferramentas.') from None
 
 
-def instructions(workspace):
+def instructions(workspace: Any) -> str:
     package = Path(__file__).resolve().parent.parent / 'skills' / 'senior-software-engineer'
     paths = [package / 'SKILL.md', package / 'references' / 'ecosystems.md',
              package / 'references' / 'knowledge.md',
@@ -73,7 +120,11 @@ def instructions(workspace):
         'Respeite instruções locais compatíveis com esta política. '
         'Não leia nem divulgue segredos. Não faça commit, push, instalação ou publicação. '
         'Não há shell livre: run_check só executa comandos fornecidos pelo operador. '
-        'Antes de editar, leia o arquivo e use o SHA-256 retornado. '
+        'O contexto é limitado: prefira search_text e leitura por faixa de linhas a ler arquivos inteiros; '
+        'resultados antigos de ferramentas podem ser removidos do histórico, então releia se precisar. '
+        'Antes de editar, leia o arquivo e use o SHA-256 retornado; prefira replace_in_file para '
+        'mudanças pontuais e write_file para arquivos novos ou reescritas pequenas. '
+        'Depois de cada edição bem-sucedida o SHA-256 muda: use o valor devolvido pela edição. '
         'Novos arquivos exigem diretório pai existente. '
         'Explique limitações e checks não executados na entrega. '
         f'Escrita autorizada: {workspace.allow_write}. '
@@ -82,11 +133,69 @@ def instructions(workspace):
     return policy + text
 
 
-def run(client, workspace, task, max_steps=12, notify=None):
-    messages = [{'role': 'system', 'content': instructions(workspace)},
-                {'role': 'user', 'content': task}]
+def payload_size(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> int:
+    return len(json.dumps({'messages': messages, 'tools': tools}).encode('utf-8'))
+
+
+def shrink_tool_message(message: dict[str, Any]) -> bool:
+    """Reduz o resultado de uma ferramenta a seus metadados. Devolve False se já reduzido."""
+    try:
+        result = json.loads(message['content'])
+    except (KeyError, TypeError, ValueError):
+        result = None
+    if not isinstance(result, dict) or 'omitted' in result:
+        return False
+    reduced = {key: result[key] for key in KEEP_KEYS if key in result}
+    reduced['omitted'] = OMITTED_NOTE
+    message['content'] = json.dumps(reduced, ensure_ascii=False)
+    return True
+
+
+def shrink_assistant_message(message: dict[str, Any]) -> bool:
+    """Remove textos volumosos dos argumentos de edições antigas, mantendo JSON válido."""
+    changed = False
+    for call in message.get('tool_calls') or []:
+        function = call.get('function', {})
+        fields = BULKY_ARGUMENTS.get(function.get('name'))
+        if not fields:
+            continue
+        try:
+            arguments = json.loads(function['arguments'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(arguments, dict):
+            continue
+        for field in fields:
+            if isinstance(arguments.get(field), str) and arguments[field] != '[omitido]':
+                arguments[field] = '[omitido]'
+                changed = True
+        function['arguments'] = json.dumps(arguments, ensure_ascii=False)
+    return changed
+
+
+def compact_history(messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+                    budget: int, protected_from: int) -> None:
+    """Esvazia, do mais antigo ao mais novo, resultados e edições anteriores à rodada
+    atual até caber no orçamento. Preserva a ordem e o pareamento tool_call_id."""
+    for role, shrink in (('tool', shrink_tool_message), ('assistant', shrink_assistant_message)):
+        for message in messages[:protected_from]:
+            if payload_size(messages, tools) <= budget:
+                return
+            if message.get('role') == role:
+                shrink(message)
+
+
+def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
+        notify: Callable[[str], None] | None = None) -> str:
+    tools = workspace.definitions()
+    messages: list[dict[str, Any]] = [{'role': 'system', 'content': instructions(workspace)},
+                                      {'role': 'user', 'content': task}]
     for _ in range(max_steps):
-        message = client.complete(messages, workspace.definitions())
+        # Proteja a rodada mais recente: o modelo precisa dos resultados que acabou de pedir.
+        assistant_turns = [i for i, m in enumerate(messages) if m['role'] == 'assistant']
+        compact_history(messages, tools, getattr(client, 'max_payload', MAX_PAYLOAD) - 8_000,
+                        assistant_turns[-1] if assistant_turns else len(messages))
+        message = client.complete(messages, tools)
         calls = message.get('tool_calls') or []
         content = message.get('content')
         if not isinstance(calls, list) or len(calls) > 8:

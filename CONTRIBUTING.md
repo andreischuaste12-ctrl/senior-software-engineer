@@ -4,7 +4,7 @@
 
 Todas as pessoas são bem-vindas, independentemente do nível de experiência.
 Contribuições podem incluir ideias, relatos de problemas, documentação, propostas
-de validação e, nas próximas etapas, código e skills próprias.
+de validação, código do agente e cenários de avaliação da skill.
 
 Abra uma issue para descrever um problema ou discutir uma proposta. Para enviar
 uma alteração, crie um fork, trabalhe em uma branch e abra um pull request para
@@ -14,7 +14,7 @@ pull request focado em um objetivo e siga as diretrizes abaixo.
 ## Conteúdo original e referências externas
 
 Estude conceitos e métodos de referências externas e escreva instruções e
-implementações próprias. Nesta etapa, não execute `npx skills add`, não incorpore
+implementações próprias. Não execute `npx skills add`, não incorpore
 dependências das referências e não copie seus arquivos, textos ou código para
 este projeto.
 
@@ -62,7 +62,9 @@ de melhoria não demonstra eficácia até ser implementada e validada.
 ## Revisão das contribuições
 
 Verifique a origem do conteúdo, a coerência com o escopo e os links documentais.
-Para futuras mudanças executáveis, documente verificações adequadas à linguagem
-e à tarefa, distinguindo resultados aprovados, falhas e verificações não executadas.
-Na etapa documental atual, revise o diff e a integridade da licença; não há testes
-de aplicação a executar.
+Para mudanças executáveis, rode `python -m unittest discover -s tests`,
+`python -m ruff check .` e `python -m mypy` (mesmas verificações do CI) e
+documente os resultados, distinguindo aprovações, falhas e verificações não
+executadas. Correções de comportamento devem incluir um teste que falhe sem a
+correção. Mudanças apenas documentais exigem revisão do diff, dos links e da
+integridade da licença.

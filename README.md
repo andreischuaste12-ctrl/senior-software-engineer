@@ -40,6 +40,10 @@ Para executar os testes locais, sem credenciais ou chamadas a um modelo real:
 py -3 -m unittest discover -s tests -v
 ```
 
+Para medir o comportamento com um modelo real, use o harness automático
+(`python -m sse_agent.evals run`, ver o [guia do CLI](docs/agente-cli.md)).
+Lint e tipos: `python -m ruff check .` e `python -m mypy`.
+
 O workflow de testes inclui Windows, Linux e macOS. Os resultados no Windows
 dependem da execução desse workflow; testes locais em Linux não os substituem.
 
