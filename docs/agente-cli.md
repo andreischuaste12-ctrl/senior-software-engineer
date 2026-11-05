@@ -3,7 +3,8 @@
 Implementação em Python 3.11+ para Windows, Linux e macOS, usando apenas a biblioteca
 padrão. O CLI carrega a skill e suas referências revisadas, conversa com uma API
 Chat Completions com function calling e executa um loop limitado de ferramentas.
-Use o checkout completo; ainda não há distribuição via pip ou executável global.
+Use o checkout completo. A instalação editável via pip oferece o comando
+`sse-agent`; não há distribuição publicada no PyPI nem pacote independente do checkout.
 
 ## Configuração
 
@@ -108,10 +109,14 @@ resultados e os textos de edição de rodadas antigas são reduzidos a metadados
 nunca é reduzida. O modelo é instruído a reler quando precisar. Se a própria
 rodada atual não couber, a tarefa é interrompida com erro claro.
 
-**Retry.** Respostas HTTP 429, 500, 502, 503 e 504 são repetidas até 3 vezes com
-backoff exponencial (1 s, 2 s, 4 s; limite de 30 s) ou o `Retry-After` do
-provedor. Timeouts e falhas de conexão nunca são repetidos, porque a chamada pode
-ter sido processada e cobrada; o provedor pode, em tese, cobrar uma resposta 5xx.
+**Retry.** Por padrão cada chamada faz apenas uma tentativa. Para autorizar
+retentativas extras em HTTP 429, 500, 502, 503 e 504, use `--api-retries N`
+(de 0 a 3, padrão 0), tanto no agente quanto no CLI de avaliações. O total máximo
+por chamada é `1 + N`, com backoff (1 s, 2 s, 4 s; limite de 30 s) ou o valor
+numérico de `Retry-After`, limitado a 30 s. Essas respostas não garantem ausência
+de processamento ou cobrança; habilitar retries pode duplicar custo. Timeouts e
+falhas de conexão nunca são repetidos automaticamente. Não há garantia de
+idempotência entre provedores nem limite monetário implementado.
 A saída final vai
 para stdout e o progresso para stderr. Falha operacional retorna código 1;
 interrupção pelo usuário retorna 130. Uma resposta final do modelo não comprova

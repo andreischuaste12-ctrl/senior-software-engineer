@@ -18,6 +18,7 @@ import sys
 import tempfile
 from typing import Any
 
+from .__main__ import positive_float
 from .agent import AgentError, Client, run
 from .tools import Workspace, check_environment
 
@@ -261,7 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('command', choices=['list', 'run'])
     parser.add_argument('ids', nargs='*', help='IDs dos cenários (padrão: todos).')
     parser.add_argument('--max-steps', type=int, default=20)
-    parser.add_argument('--api-timeout', type=float, default=120)
+    parser.add_argument('--api-timeout', type=positive_float, default=120)
+    parser.add_argument('--api-retries', type=int, choices=range(4), default=0,
+                        help='Retentativas extras autorizadas; podem gerar cobrança duplicada (padrão: 0).')
     parser.add_argument('--keep', action='store_true', help='Mantenha os fixtures para inspeção.')
     parser.add_argument('--json', action='store_true', help='Saída em JSON.')
     args = parser.parse_args(argv)
@@ -277,7 +280,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         client = Client(os.environ.get('SSE_API_KEY') or os.environ.get('OPENAI_API_KEY'),
                         os.environ.get('SSE_MODEL'),
-                        os.environ.get('SSE_BASE_URL', 'https://api.openai.com/v1'), args.api_timeout)
+                        os.environ.get('SSE_BASE_URL', 'https://api.openai.com/v1'),
+                        args.api_timeout, retries=args.api_retries)
     except AgentError as exc:
         print(f'Erro: {exc}', file=sys.stderr)
         return 1

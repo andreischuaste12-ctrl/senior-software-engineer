@@ -39,7 +39,7 @@ def retry_delay(attempt: int, header: str | None) -> float:
 class Client:
     def __init__(self, api_key: str | None, model: str | None,
                  base_url: str = 'https://api.openai.com/v1', timeout: float = 120,
-                 max_payload: int = MAX_PAYLOAD, retries: int = 3,
+                 max_payload: int = MAX_PAYLOAD, retries: int = 0,
                  sleep: Callable[[float], None] = time.sleep) -> None:
         url = parse.urlsplit(base_url)
         local_http = url.scheme == 'http' and url.hostname in {'localhost', '127.0.0.1', '::1'}
@@ -49,6 +49,8 @@ class Client:
                              'HTTP é permitido apenas para API local em loopback.')
         if not api_key or not model:
             raise AgentError('Configure SSE_API_KEY (ou OPENAI_API_KEY) e SSE_MODEL.')
+        if isinstance(retries, bool) or not isinstance(retries, int) or not 0 <= retries <= 3:
+            raise AgentError('O número de retentativas precisa ser um inteiro entre 0 e 3.')
         self.api_key, self.model = api_key, model
         self.endpoint = base_url.rstrip('/') + '/chat/completions'
         self.timeout = timeout
@@ -57,9 +59,10 @@ class Client:
         self.sleep = sleep
 
     def _post(self, payload: bytes) -> bytes:
-        """Envia a requisição. Só repete status que indicam rejeição antes do processamento
-        (429/5xx), com backoff; timeouts e falhas de conexão nunca são repetidos, pois a
-        chamada pode ter sido processada e cobrada."""
+        """POST sem retry por padrão. Quando autorizado, repete 429/5xx com backoff.
+        Esses status não garantem ausência de processamento ou cobrança. Falhas
+        de conexão e timeouts nunca são repetidos automaticamente.
+        """
         req = request.Request(self.endpoint, data=payload, headers={
             'Content-Type': 'application/json', 'Authorization': 'Bearer ' + self.api_key})
         for attempt in range(self.retries + 1):

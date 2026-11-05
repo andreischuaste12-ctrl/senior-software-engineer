@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -116,6 +117,37 @@ class ReadAndSearchTests(ToolsTestCase):
 
 
 class EditTests(ToolsTestCase):
+    def test_expansion_is_rejected_before_large_allocation(self):
+        target = self.write('a.txt', 'a' * 20_000)
+        digest = self.workspace.read_file('a.txt')['sha256']
+        tracemalloc.start()
+        try:
+            with self.assertRaisesRegex(ValueError, 'Resultado excede'):
+                self.workspace.replace_in_file('a.txt', 'a', 'b' * 500, digest, replace_all=True)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # A leitura usa buffer de até 2 MB. Não deve alocar o resultado de 10 MB
+        # nem a cópia codificada, que antes somavam aproximadamente 20 MB.
+        self.assertLess(peak, 4_000_000)
+        self.assertEqual(target.read_bytes(), b'a' * 20_000)
+
+    def test_expansion_limit_counts_utf8_bytes_and_crlf(self):
+        cases = [(b'x' * 1000, 'x', 'é' * 1001),
+                 (b'x\r\n' * 1000, 'x\n', 'é' * 1000 + '\n')]
+        for current, old, new in cases:
+            target = self.write('a.txt', current)
+            digest = sha(current)
+            with self.subTest(old=old), self.assertRaisesRegex(ValueError, 'Resultado excede'):
+                self.workspace.replace_in_file('a.txt', old, new, digest, replace_all=True)
+            self.assertEqual(target.read_bytes(), current)
+
+    def test_unique_replacement_accepts_unicode_result(self):
+        self.write('a.txt', 'a' * 20_000)
+        digest = self.workspace.read_file('a.txt')['sha256']
+        result = self.workspace.replace_in_file('a.txt', 'a' * 20_000, 'é' * 100, digest)
+        self.assertEqual(result['sha256'], sha(('é' * 100).encode()))
+
     def test_replace_in_file_unique_match(self):
         self.write('a.py', 'a = 1\nb = 2\n')
         original = self.workspace.read_file('a.py')
