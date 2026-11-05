@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -128,12 +129,20 @@ class CliTests(unittest.TestCase):
                                   'json': ['a b', 'c']})
 
     def test_parse_checks_rejects_invalid_definitions(self):
-        for shell, json_style in ((['noequals'], []), (['=cmd'], []), (['a='], []),
-                                  (['a=x', 'a=y'], []), (['a=x'], ['a=["y"]']),
-                                  ([], ['a=not-json']), ([], ['a={"x": 1}']), ([], ['a=[1]']),
-                                  ([], ['a=[""]']), (['a="unterminated'], [])):
+        invalid = [(['noequals'], []), (['=cmd'], []), (['a='], []),
+                   (['a=x', 'a=y'], []), (['a=x'], ['a=["y"]']),
+                   ([], ['a=not-json']), ([], ['a={"x": 1}']), ([], ['a=[1]']), ([], ['a=[""]'])]
+        if sys.platform != 'win32':
+            # CommandLineToArgvW (Windows) aceita aspas sem fechamento; só o shlex as recusa.
+            invalid.append((['a="unterminated'], []))
+        for shell, json_style in invalid:
             with self.subTest(shell=shell, json=json_style), self.assertRaises(AgentError):
                 parse_checks(shell, json_style)
+
+    @unittest.skipIf(sys.platform == 'win32', 'Regra do shlex (POSIX).')
+    def test_unterminated_quote_is_reported_as_a_clear_error(self):
+        with self.assertRaisesRegex(AgentError, 'ilegível'):
+            parse_checks(['a="unterminated'], [])
 
     def test_version_flag_and_timeouts(self):
         output = io.StringIO()
