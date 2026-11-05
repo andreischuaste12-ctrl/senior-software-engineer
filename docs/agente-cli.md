@@ -74,8 +74,11 @@ registra um nome único e um comando dividido em argumentos sem shell. Pipes,
 redirecionamento e expansão de variáveis não são interpretados. O modelo escolhe
 apenas um nome registrado, sem acrescentar argumentos. Checks podem executar código
 do projeto e escrever arquivos mesmo sem `--allow-write`; só autorize comandos e
-repositórios em que confia. As duas variáveis de chave da API acima são removidas
-do ambiente dos checks; outras variáveis do processo continuam disponíveis.
+repositórios em que confia. Os checks recebem apenas um ambiente mínimo
+(PATH, HOME, TEMP, SystemRoot, LANG, LC_*, VIRTUAL_ENV e semelhantes): tokens como
+`GITHUB_TOKEN` ou chaves de nuvem não são repassados. Use `--check-env NOME`
+(repetível) para repassar uma variável específica; `SSE_API_KEY` e
+`OPENAI_API_KEY` nunca são repassadas.
 
 Em todas as plataformas, `--check-json` também aceita `NOME=ARRAY_JSON`, onde o
 array contém executável e argumentos como strings, sem reinterpretar seus caminhos.
@@ -86,15 +89,30 @@ entre versões do PowerShell, portanto prefira `--check` nos exemplos simples.
 
 | Ferramenta | Capacidade |
 | --- | --- |
-| list_files | Lista até 1000 arquivos e sinaliza truncamento; exclui diretórios comuns de dependências, Git, links simbólicos e nomes sensíveis conhecidos. |
-| read_file | Lê UTF-8 até 64000 bytes e retorna SHA-256. |
-| write_file | Disponível com --allow-write; cria texto em diretório existente ou substitui arquivo previamente lido usando seu hash. Não exclui arquivos. |
-| run_check | Disponível apenas quando o operador registra checks; devolve exit code, timeout e até 16000 bytes de saída. |
+| list_files | Lista até 1000 arquivos (filtro opcional `pattern`, glob) e sinaliza truncamento. Oculta Git, dependências e caches, links simbólicos e nomes sensíveis; oculta `build/`, `dist/` e `target/` apenas na raiz do workspace (pacotes aninhados com esses nomes são acessíveis). |
+| search_text | Busca literal (como `grep -F`) com `ignore_case` e `pattern` opcionais; devolve caminho, linha e trecho (até 200 resultados). Ignora binários e arquivos acima de 2 MB. |
+| read_file | Lê UTF-8 e retorna o SHA-256 do arquivo inteiro. Acima de 64000 bytes exige `start_line`/`end_line` (arquivos de até 2 MB); devolve `total_lines`. |
+| replace_in_file | Disponível com --allow-write; troca um trecho exato e único (ou todos, com `replace_all`) num arquivo previamente lido, validando o SHA-256. Preserva CRLF e permissões. Funciona em arquivos de até 2 MB. |
+| write_file | Disponível com --allow-write; cria texto (até 64000 bytes) em diretório existente ou substitui arquivo previamente lido usando seu hash. Preserva CRLF de arquivo existente. Não exclui arquivos. |
+| run_check | Disponível apenas quando o operador registra checks; devolve exit code, timeout e até 16000 bytes de saída (início e, principalmente, o final, onde costumam estar as falhas). |
 
-O padrão é 12 rodadas (`--max-steps`) e 60 segundos por chamada/check (`--timeout`).
-Há limites de 8 chamadas de ferramenta por rodada, 250000 bytes no payload e
+O padrão é 12 rodadas (`--max-steps`), 120 segundos por chamada de API
+(`--api-timeout`) e 60 segundos por check (`--timeout`). Há limites de 8 chamadas
+de ferramenta por rodada, 250000 bytes no payload (`--max-context-bytes`) e
 2000000 bytes na resposta HTTP. São limites locais, não estimativas de tokens ou
-controle de gastos. Não há retry automático de chamadas pagas. A saída final vai
+controle de gastos.
+
+**Contexto.** Antes de cada chamada, se o payload passar do orçamento, os
+resultados e os textos de edição de rodadas antigas são reduzidos a metadados
+(caminho, SHA-256, exit code), do mais antigo ao mais novo; a rodada mais recente
+nunca é reduzida. O modelo é instruído a reler quando precisar. Se a própria
+rodada atual não couber, a tarefa é interrompida com erro claro.
+
+**Retry.** Respostas HTTP 429, 500, 502, 503 e 504 são repetidas até 3 vezes com
+backoff exponencial (1 s, 2 s, 4 s; limite de 30 s) ou o `Retry-After` do
+provedor. Timeouts e falhas de conexão nunca são repetidos, porque a chamada pode
+ter sido processada e cobrada; o provedor pode, em tese, cobrar uma resposta 5xx.
+A saída final vai
 para stdout e o progresso para stderr. Falha operacional retorna código 1;
 interrupção pelo usuário retorna 130. Uma resposta final do modelo não comprova
 que os testes passaram: confira as evidências apresentadas e o diff.
@@ -134,13 +152,34 @@ não foi treinada em um modelo próprio: orienta um modelo acessado por API.
 
 ```bash
 python -m unittest discover -s tests -v
+python -m pip install ruff==0.17.4 mypy==2.4.1   # mesmas versões do CI
+python -m ruff check . && python -m mypy
 ```
+
+`python -m pip install -e .` instala o comando `sse-agent` (equivalente a
+`python -m sse_agent`). A skill continua sendo lida do checkout, então use a
+instalação editável.
 
 Os testes exercitam leitura/escrita, limites de caminho e conteúdo, hash obsoleto,
 check com falha/timeout, erros da API e uma execução real do CLI contra um servidor
 HTTP simulado local, com chamadas de ferramentas e alteração de arquivo temporário.
 Esse teste confirma integração e protocolo; não avalia raciocínio de um LLM.
-Para eficácia, execute os cenários comportamentais da skill com um modelo real.
+
+### Avaliação com modelo real
+
+```bash
+python -m sse_agent.evals list
+python -m sse_agent.evals run            # E01, E03, E05 e E10; usa SSE_API_KEY e SSE_MODEL
+python -m sse_agent.evals run E05 --json --keep
+```
+
+Cada cenário cria um fixture descartável, executa o agente e aplica critérios
+determinísticos (testes passam, teste original intacto, arquivo não relacionado
+preservado, segredo não vazado, diff restrito ao escopo). A chamada à API gera
+cobrança. Os testes em `tests/test_evals.py` validam os próprios critérios com
+agentes roteirizados (um que deve passar e outro que deve reprovar em cada
+cenário); eles **não** medem a eficácia de nenhum modelo. Um "aprovado" vale
+somente para o modelo, a revisão e o fixture usados.
 
 O GitHub Actions executa a suíte em Windows, Ubuntu e macOS com Python 3.11 e
 3.14 após push/PR ou acionamento manual. O teste de junction roda somente no

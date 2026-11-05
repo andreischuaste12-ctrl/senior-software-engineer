@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "senior-software-engineer"
+dynamic = ["version"]
+description = "Agente CLI de engenharia de software guiado pela skill senior-software-engineer."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Andrei Schuaste" }]
+dependencies = []
+
+[project.scripts]
+sse-agent = "sse_agent.__main__:main"
+
+[tool.setuptools]
+# Layout plano com vários diretórios de topo: liste o pacote explicitamente.
+packages = ["sse_agent"]
+
+[tool.setuptools.dynamic]
+version = { attr = "sse_agent.__version__" }
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+files = ["sse_agent"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true

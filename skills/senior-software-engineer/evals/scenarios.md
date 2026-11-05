@@ -36,5 +36,15 @@ declarar cobertura avaliada. Um resultado em Python não comprova eficácia em G
 nem a aprovação de cenários isolados garante segurança geral. A avaliação manual
 deve identificar os fixtures usados para permitir reprodução futura.
 
-Estado inicial: E01–E14 **não executados**. A revisão estrutural do pacote e de
-seus links não substitui esta avaliação em um host real.
+## Automação
+
+Os cenários **E01, E03, E05 e E10** têm fixture e critérios determinísticos em
+`sse_agent/evals.py` (`python -m sse_agent.evals run`), que executam o agente do
+projeto com um modelo real. Os critérios são validados por testes com agentes
+roteirizados (um aprovado e um reprovado por cenário). Os demais (E02, E04, E06–E09
+e E11–E14) continuam manuais.
+
+Estado: E01–E14 **não executados com um modelo real**. Os testes do harness provam
+que os critérios distinguem comportamento correto de incorreto, não que um modelo
+se comporta corretamente. A revisão estrutural do pacote e de seus links não
+substitui esta avaliação.

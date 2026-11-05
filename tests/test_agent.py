@@ -11,8 +11,8 @@ import unittest
 from unittest.mock import patch
 
 from sse_agent.agent import AgentError, Client, run
-from sse_agent.tools import Workspace
 from sse_agent.platforms import split_command
+from sse_agent.tools import Workspace
 
 
 class WorkspaceTests(unittest.TestCase):
