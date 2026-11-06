@@ -84,6 +84,8 @@ class PathPolicyTests(ToolsTestCase):
             Workspace(Path(self.root.anchor))
         with self.assertRaisesRegex(ValueError, 'project directory'):
             Workspace(Path.home())
+        with patch('sse_agent.tools.Path.home', side_effect=RuntimeError('unavailable')):
+            self.assertEqual(Workspace(self.root).root, self.root.resolve())
 
     def test_common_credential_names_and_secret_content_are_blocked(self):
         names = ('auth.json', '.config/gh/hosts.yml', '.cargo/credentials.toml', '.pgpass',

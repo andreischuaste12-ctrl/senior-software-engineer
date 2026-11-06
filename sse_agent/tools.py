@@ -168,7 +168,11 @@ class Workspace:
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise ValueError('The workspace must be a directory.')
-        if self.root == Path(self.root.anchor) or self.root == Path.home().resolve():
+        try:
+            home = Path.home().resolve()
+        except (OSError, RuntimeError):
+            home = None
+        if self.root == Path(self.root.anchor) or (home is not None and self.root == home):
             raise ValueError('Choose a project directory, not a filesystem or home-directory root.')
         self.allow_write = allow_write
         self.allow_executable_write = allow_executable_write
