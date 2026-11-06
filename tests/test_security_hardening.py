@@ -240,7 +240,8 @@ class ProtectedNameTests(WorkspaceCase):
     def test_windows_aliases_are_rejected_only_on_windows(self):
         self.write('GIT~1/config')
         workspace = Workspace(self.root)
-        self.assertTrue(self.readable(workspace, 'GIT~1/config'))
+        with patch('sse_agent.tools.WINDOWS', False):
+            self.assertTrue(self.readable(workspace, 'GIT~1/config'))
         with patch('sse_agent.tools.WINDOWS', True):
             self.assertFalse(self.readable(workspace, 'GIT~1/config'))
 

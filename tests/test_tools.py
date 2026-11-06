@@ -80,7 +80,8 @@ class PathPolicyTests(ToolsTestCase):
         with patch('sse_agent.tools.WINDOWS', True), self.assertRaises(ValueError):
             self.workspace.read_file('GIT~1/config')
         self.write('report~1.txt', 'legit')
-        self.assertEqual(self.workspace.read_file('report~1.txt')['content'], 'legit')
+        with patch('sse_agent.tools.WINDOWS', False):
+            self.assertEqual(self.workspace.read_file('report~1.txt')['content'], 'legit')
 
     def test_filesystem_and_home_roots_are_rejected(self):
         with self.assertRaisesRegex(ValueError, 'project directory'):

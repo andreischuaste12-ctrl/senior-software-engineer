@@ -342,6 +342,8 @@ class Workspace:
 
     def _load(self, relative: str) -> tuple[Path, bytes]:
         target = self.path(relative)
+        if target.is_dir():  # os.open() on a directory succeeds on POSIX but raises on Windows
+            raise ValueError('Refused: only regular files with a single link can be accessed.')
         try:
             # O_NONBLOCK keeps a FIFO from blocking open(); the regular-file check follows.
             flags = (os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) |
