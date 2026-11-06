@@ -11,7 +11,7 @@ performance measurements, or other appropriate evidence.
 ## Current status
 
 The repository contains a Python CLI agent, a self-contained `SKILL.md` package,
-reviewed knowledge references, and deterministic evaluation fixtures. The agent
+reviewed knowledge references, and eight deterministic evaluation fixtures. The agent
 uses a tool-capable AI API and local tools controlled by the operator. Real-model
 effectiveness has not yet been measured; scripted integration tests do not prove it.
 

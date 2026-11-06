@@ -117,6 +117,9 @@ class Workspace:
         self.allow_files = tuple(allow_files)
         if any(not isinstance(pattern, str) or not pattern for pattern in (*self.deny, *self.allow_files)):
             raise ValueError('Access patterns must be non-empty strings.')
+        if any(not [part for part in pattern.replace('\\', '/').split('/') if part and part != '.']
+               for pattern in (*self.deny, *self.allow_files)):
+            raise ValueError('Access patterns must contain a path or glob component.')
 
     def denied(self, relative: str) -> bool:
         return any(matches_pattern(relative.casefold(), pattern.casefold()) for pattern in self.deny)
@@ -154,10 +157,12 @@ class Workspace:
     def definitions(self) -> list[dict[str, Any]]:
         definitions = [
             schema('list_files', 'List visible files (up to 1000). Optional pattern '
-                   '(glob, e.g. "*.py" or "src/**/*.ts") filters the results.',
+                   '(glob, e.g. "*.py" or "src/**/*.ts") may be relative to the workspace '
+                   'or to directory.',
                    {'pattern': {'type': 'string'}, 'directory': {'type': 'string'}}, []),
             schema('search_text', 'Search files for literal text (like grep -F). '
-                   'Returns the path, line, and excerpt. Use before reading whole files.',
+                   'Returns the path, line, and excerpt. pattern may be relative to the '
+                   'workspace or to directory. Use before reading whole files.',
                    {'query': {'type': 'string'}, 'pattern': {'type': 'string'},
                     'directory': {'type': 'string'},
                     'ignore_case': {'type': 'boolean'},
@@ -199,6 +204,9 @@ class Workspace:
         start = self.path(directory, directory=True)
         if not start.is_dir():
             raise ValueError('Search directory not found.')
+        start_relative = start.relative_to(self.root)
+        if start_relative.parts and start_relative.parts[0].lower() in ARTIFACT_DIRS:
+            raise ValueError('Root artifact directories cannot be enumerated.')
         for base, dirs, files in os.walk(start, followlinks=False):
             at_root = Path(base) == self.root
             dirs[:] = sorted(d for d in dirs if not protected(d) and
@@ -220,10 +228,12 @@ class Workspace:
         if pattern is not None and not isinstance(pattern, str):
             raise ValueError('pattern must be a string.')
         found: list[str] = []
+        start = self.path(directory, directory=True)
         for relative in self._walk(directory):
             if relative is None:
                 return {'files': found, 'truncated': True}
-            if not matches_pattern(relative, pattern):
+            scoped = Path(relative).relative_to(start.relative_to(self.root)).as_posix()
+            if not (matches_pattern(relative, pattern) or matches_pattern(scoped, pattern)):
                 continue
             found.append(relative)
             if len(found) >= MAX_LISTED_FILES:
@@ -252,6 +262,11 @@ class Workspace:
         lines = split_lines(data.decode('utf-8'))
         start = 1 if start_line is None else integer_argument(start_line, 'start_line')
         end = len(lines) if end_line is None else integer_argument(end_line, 'end_line')
+        if not lines:
+            if start > 1:
+                raise ValueError('start_line is past the end of the file (0 lines).')
+            return {'path': path, 'content': '', 'sha256': digest, 'start_line': 1,
+                    'end_line': 0, 'total_lines': 0, 'truncated': False}
         if start > end:
             raise ValueError('start_line cannot be greater than end_line.')
         if lines and start > len(lines):
@@ -278,10 +293,12 @@ class Workspace:
         limit = min(integer_argument(max_results, 'max_results'), MAX_SEARCH_RESULTS)
         needle = query.lower() if ignore_case else query
         matches: list[dict[str, Any]] = []
+        start = self.path(directory, directory=True)
         for relative in self._walk(directory):
             if relative is None:
                 return {'matches': matches, 'truncated': True}
-            if not matches_pattern(relative, pattern):
+            scoped = Path(relative).relative_to(start.relative_to(self.root)).as_posix()
+            if not (matches_pattern(relative, pattern) or matches_pattern(scoped, pattern)):
                 continue
             try:
                 with self.path(relative).open('rb') as stream:
@@ -345,6 +362,8 @@ class Workspace:
                 raise ValueError('File changed or was not read; read it again before writing.')
             if uses_crlf(current) and b'\r' not in data:
                 data = data.replace(b'\n', b'\r\n')  # preserve the file's line endings
+                if len(data) > MAX_FILE_BYTES:
+                    raise ValueError(f'Content exceeds the {MAX_FILE_BYTES}-byte limit after CRLF conversion.')
             self._replace_existing(path, target, data, expected_sha256)
         else:
             if expected_sha256 is not None:

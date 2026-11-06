@@ -1,4 +1,4 @@
-# Terminal AI agent — 0.4.0
+# Terminal AI agent — 0.5.0
 
 Python 3.11 or newer is required on Windows, Linux, or macOS. The wheel has no
 runtime dependencies and includes the skill resources. Both `pip install .` and
@@ -63,8 +63,9 @@ secret. Review the provider's terms and the selected data before enabling transf
 - `node_modules`, virtual environments, and tool caches are always blocked.
   Root-level `build`, `dist`, `target`, `vendor`, `.next`, and `coverage`
   are omitted from recursive listing. Nested directories with those names remain
-  accessible because they may represent source-domain concepts. Direct root paths
-  remain accessible unless denied by the operator.
+  accessible because they may represent source-domain concepts. Root artifact
+  directories cannot be enumerated directly, although an explicitly named file
+  remains readable unless denied by the operator.
 - Symlinks, junctions/reparse points, parent traversal, NTFS streams, and reserved
   Windows device names are rejected.
 
@@ -75,8 +76,8 @@ for all secrets. Avoid concurrent modifications and use a narrow allowlist.
 
 | Tool | Contract |
 | --- | --- |
-| `list_files` | Optional `pattern` and `directory`; up to 1,000 results and 10,000 scanned files. |
-| `search_text` | Literal query with optional pattern, directory, case folding, and a 200-result ceiling. |
+| `list_files` | Optional `pattern` and `directory`; patterns may be workspace-relative or directory-relative; up to 1,000 results and 10,000 scanned files. |
+| `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, and a 200-result ceiling. |
 | `read_file` | UTF-8, up to 64,000 response bytes; line ranges for files up to 2 MB; full-file SHA-256. |
 | `replace_in_file` | Requires `--allow-write`, the read hash, and a unique old string unless `replace_all`; preserves CRLF. |
 | `write_file` | Requires `--allow-write`; creates under an existing parent or replaces with a valid hash. |
@@ -115,8 +116,9 @@ py -3 -m sse_agent.evals run E05 --json
 ```
 
 The evaluation CLI uses the configured real model and requires `--allow-remote`
-for an external API. E01, E03, E05, and E10 use synthetic fixtures and deterministic
-graders. Scripted tests validate the graders; they do not measure a real model.
+for an external API. E01, E02, E03, E05, E06, E07, E08, and E10 use synthetic
+fixtures and deterministic graders. Scripted tests validate the graders; they do
+not measure a real model.
 
 The CI matrix covers Windows, Ubuntu, and macOS on Python 3.11 and 3.14, including
 a non-editable installation outside the checkout. Passing tests do not guarantee

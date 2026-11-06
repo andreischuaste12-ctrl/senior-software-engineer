@@ -27,7 +27,7 @@ class AuditRegressions(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('SYNTHETIC_ONLY', encoding='utf-8')
-            workspace = Workspace(root, allow_write=True, deny=['private/**'], allow_files=['**/*.py'])
+            workspace = Workspace(root, allow_write=True, deny=['private/'], allow_files=['**/*.py'])
             self.assertEqual(workspace.list_files()['files'], ['src/ok.py'])
             self.assertEqual(len(workspace.search_text('SYNTHETIC')['matches']), 1)
             for name in names:
@@ -43,22 +43,43 @@ class AuditRegressions(unittest.TestCase):
                 self.assertIn('error', blocked.execute('read_file', {'path': name}), name)
             with self.assertRaises(ValueError):
                 workspace.list_files(directory='private')
+            directory_allowlist = Workspace(root, allow_files=['src/'])
+            self.assertEqual(directory_allowlist.list_files()['files'], ['src/ok.py'])
+
+            (root / 'config.py').write_text('root', encoding='utf-8')
+            (root / 'src/config.py').write_text('nested', encoding='utf-8')
+            anchored = Workspace(root, allow_files=['./config.py'])
+            self.assertEqual(anchored.list_files()['files'], ['config.py'])
 
     def test_globstar_and_directory_search(self):
         for relative in ('src/a.ts', 'src/nested/a.ts', 'src/deep/nested/a.ts'):
             self.assertTrue(matches_pattern(relative, 'src/**/*.ts'))
         self.assertFalse(matches_pattern('src/nested/a.ts', 'src/*.ts'))
         self.assertFalse(matches_pattern('other/a.ts', 'src/**/*.ts'))
+        self.assertTrue(matches_pattern('private/secret.txt', 'private/'))
+        self.assertTrue(matches_pattern('private/secret.txt', 'private\\'))
+        self.assertTrue(matches_pattern('src/secret.py', 'src//*.py'))
+        self.assertFalse(matches_pattern('nested/src', 'src/.'))
+        self.assertTrue(matches_pattern('config.py', './config.py'))
+        self.assertFalse(matches_pattern('nested/config.py', './config.py'))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('vendor/large.ts', '.next/cache.ts', 'coverage/report.ts', 'src/a.ts'):
+            for name in ('vendor/large.ts', '.next/cache.ts', 'coverage/report.ts',
+                         'src/a.ts', 'src/sub/b.ts'):
                 target = root / name
                 target.parent.mkdir(exist_ok=True)
                 target.write_text('needle', encoding='utf-8')
             workspace = Workspace(root)
+            with self.assertRaises(ValueError):
+                Workspace(root, deny=['/'])
             with patch('sse_agent.tools.MAX_SCANNED_FILES', 1):
                 self.assertEqual(workspace.list_files(directory='src')['files'], ['src/a.ts'])
                 self.assertEqual(workspace.search_text('needle', directory='src')['matches'][0]['path'], 'src/a.ts')
+            self.assertEqual(workspace.list_files(directory='src', pattern='sub/*.ts')['files'], ['src/sub/b.ts'])
+            self.assertEqual(workspace.list_files(directory='src', pattern='src/sub/*.ts')['files'], ['src/sub/b.ts'])
+            for artifact in ('vendor', '.next', 'coverage'):
+                with self.subTest(artifact=artifact), self.assertRaises(ValueError):
+                    workspace.list_files(directory=artifact)
             for invalid in ('../', '/etc'):
                 with self.subTest(path=invalid), self.assertRaises(ValueError):
                     workspace.list_files(directory=invalid)
@@ -115,7 +136,7 @@ class AuditRegressions(unittest.TestCase):
                 if self.step == 1:
                     return {'tool_calls': [{'id': '1', 'type': 'function', 'function': {
                         'name': 'read_file', 'arguments': json.dumps({'path': self.path})}}]}
-                return {'content': 'DEBUG is enabled, the key is hard-coded, and hosts are unrestricted.'}
+                return {'content': 'DEBUG is enabled, SECRET_KEY is hard-coded, and ALLOWED_HOSTS is unrestricted.'}
 
         for path in ('config.py', './config.py', '.\\config.py'):
             self.assertEqual(run_scenario(scenarios()['E05'], Model(path))['status'], 'passed')

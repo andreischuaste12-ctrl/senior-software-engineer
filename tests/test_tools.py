@@ -37,12 +37,14 @@ class PathPolicyTests(ToolsTestCase):
             self.assertIn(f'src/{name}/module.py', files)
             self.assertEqual(self.workspace.read_file(f'src/{name}/module.py')['content'], 'x = 1\n')
 
-    def test_root_artifact_directories_are_hidden_from_listing_only(self):
+    def test_root_artifact_directories_cannot_be_enumerated_directly(self):
         for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
             self.write(f'{name}/out.js', 'compiled')
         self.write('app.py', 'x')
         self.assertEqual(self.workspace.list_files()['files'], ['app.py'])
         for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.workspace.list_files(directory=name)
             self.assertEqual(self.workspace.read_file(f'{name}/out.js')['content'], 'compiled')
 
     def test_env_lookalikes_and_templates_are_readable_but_secrets_are_not(self):
@@ -79,6 +81,14 @@ class ReadAndSearchTests(ToolsTestCase):
                        {'start_line': True}, {'end_line': 'x'}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 self.workspace.read_file('a.txt', **kwargs)
+
+    def test_empty_file_range_is_well_defined(self):
+        self.write('empty.txt', b'')
+        result = self.workspace.read_file('empty.txt', start_line=1)
+        self.assertEqual((result['content'], result['start_line'], result['end_line'], result['total_lines']),
+                         ('', 1, 0, 0))
+        with self.assertRaisesRegex(ValueError, 'past the end'):
+            self.workspace.read_file('empty.txt', start_line=2, end_line=2)
 
     def test_large_file_requires_a_range_and_is_cut_on_a_line_boundary(self):
         content = ''.join(f'{number:05d} ' + 'x' * 90 + '\n' for number in range(1, 1501))  # ~136 KB
@@ -196,6 +206,14 @@ class EditTests(ToolsTestCase):
         digest = self.workspace.read_file('a.txt')['sha256']
         self.workspace.write_file('a.txt', 'uno\ndos\n', digest)
         self.assertEqual(target.read_bytes(), b'uno\r\ndos\r\n')
+
+    def test_write_file_rejects_content_that_exceeds_limit_after_crlf_conversion(self):
+        target = self.write('a.txt', b'one\r\n')
+        digest = self.workspace.read_file('a.txt')['sha256']
+        content = 'x\n' * 32_000
+        with self.assertRaisesRegex(ValueError, 'after CRLF conversion'):
+            self.workspace.write_file('a.txt', content, digest)
+        self.assertEqual(target.read_bytes(), b'one\r\n')
 
     def test_write_tools_are_absent_and_denied_in_read_only_mode(self):
         self.write('a.txt', 'x')

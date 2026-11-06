@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "skill": "senior-software-engineer",
+  "real_model_status": "not_run",
+  "automated_scenarios": ["E01", "E02", "E03", "E05", "E06", "E07", "E08", "E10"],
+  "manual_scenarios": ["E04", "E09", "E11", "E12", "E13", "E14"],
+  "result_scope": "A pass applies only to the recorded model, skill revision, fixture, and host.",
+  "evidence_required": ["model", "skill_revision", "fixture", "prompt", "tools", "commands", "results", "diff"]
+}

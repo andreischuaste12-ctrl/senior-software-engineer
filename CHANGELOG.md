@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0 - 2026-11-06
+
+- Normalized access globs so trailing slashes, repeated separators, and anchored
+  `./` patterns behave predictably; invalid separator-only patterns are rejected.
+- Compacted oversized values from the current tool round, used UTF-8 JSON sizing,
+  and rejected context budgets too small for the base prompt.
+- Defined ranged reads for empty files and enforced the write limit after CRLF conversion.
+- Strengthened E01, E03, E05, and E10 graders and converted evaluator timeouts into failures.
+- Added deterministic fixtures and positive/negative grader tests for E02, E06,
+  E07, and E08, plus machine-readable evaluation coverage metadata.
+- Reduced the CLI system prompt to the skill body, removed YAML frontmatter, and
+  clarified that package references are outside the user workspace.
+- Allowed directory-scoped patterns relative to either the workspace or selected
+  directory, while preventing direct enumeration of root artifact directories.
+- Enabled strict mypy configuration for the agent and scripts, forced LF checkout
+  normalization, and made standalone wheel checks explicitly use UTF-8 on Windows.
+
 ## 0.4.0 - 2026-11-06
 
 - Converted maintained code, CLI output, skill instructions, tests, and

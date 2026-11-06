@@ -230,7 +230,8 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(len(requests), 5)
             prompt = requests[0]['messages'][0]['content']
             self.assertIn('# Senior Software Engineer', prompt)
-            self.assertIn('# Reviewed supplemental knowledge', prompt)
+            self.assertNotIn('name: senior-software-engineer', prompt)
+            self.assertIn('belong to its installed package', prompt)
             self.assertNotIn('3.15.2', prompt)
             outputs = [json.loads(message['content']) for message in requests[-1]['messages']
                        if message['role'] == 'tool']

@@ -1,2 +1,2 @@
 # Normalize maintained text files across Windows, macOS, and Linux.
-* text=auto
+* text=auto eol=lf

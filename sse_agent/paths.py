@@ -8,11 +8,15 @@ def matches_pattern(relative: str, pattern: str | None) -> bool:
     if not pattern:
         return True
     parts = relative.replace('\\', '/').split('/')
-    pattern = pattern.replace('\\', '/')
-    if pattern.startswith('./'):
-        pattern = pattern[2:]
-    tokens = pattern.split('/')
-    if len(tokens) == 1:
+    normalized = pattern.replace('\\', '/')
+    anchored = normalized.startswith(('./', '/'))
+    directory_pattern = normalized.endswith('/')
+    tokens = [token for token in normalized.split('/') if token and token != '.']
+    if not tokens:
+        return False
+    if directory_pattern:
+        tokens.append('**')
+    if len(tokens) == 1 and not anchored and '/' not in normalized.rstrip('/'):
         return fnmatchcase(parts[-1], tokens[0])
 
     @cache

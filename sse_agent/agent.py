@@ -13,6 +13,7 @@ from urllib import error, parse, request
 MAX_PAYLOAD = 250_000
 RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRY_DELAY = 30.0
+CONTEXT_RESERVE = 8_000
 DEFAULT_BASE_URL = 'http://127.0.0.1:1234/v1'
 # Fields from old tool results that survive context compaction.
 KEEP_KEYS = ('path', 'sha256', 'written', 'replacements', 'name', 'exit_code',
@@ -100,7 +101,7 @@ class Client:
 
     def complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> dict[str, Any]:
         payload = json.dumps({'model': self.model, 'messages': messages,
-                              'tools': tools, 'tool_choice': 'auto'}).encode('utf-8')
+                              'tools': tools, 'tool_choice': 'auto'}, ensure_ascii=False).encode('utf-8')
         if len(payload) > self.max_payload:
             raise AgentError('Local context limit exceeded; reduce the task scope.')
         raw = self._post(payload)
@@ -121,13 +122,14 @@ def instructions(workspace: Any) -> str:
     package: Traversable = Path(__file__).resolve().parent.parent / 'skills' / 'senior-software-engineer'
     if not (package / 'SKILL.md').is_file():
         package = files('sse_skill')
-    paths = [package / 'SKILL.md', package / 'references' / 'ecosystems.md',
-             package / 'references' / 'knowledge.md',
-             package / 'references' / 'api-currency.md']
     try:
-        text = '\n\n'.join(path.read_text(encoding='utf-8') for path in paths)
+        text = (package / 'SKILL.md').read_text(encoding='utf-8')
     except OSError:
         raise AgentError('Skill resources are missing; reinstall the package.') from None
+    if text.startswith('---\n'):
+        _, separator, text = text[4:].partition('\n---\n')
+        if not separator:
+            raise AgentError('Invalid skill frontmatter; reinstall the package.')
     policy = (
         'You are this project\'s agent. Answer in the user\'s language. '
         'Use tools to gather evidence; never invent reads, edits, or test results. '
@@ -142,6 +144,8 @@ def instructions(workspace: Any) -> str:
         'focused edits and write_file for new files or small rewrites. '
         'Each successful edit changes the SHA-256: use the value returned by that edit. '
         'New files require an existing parent directory. '
+        'References and evals mentioned by the skill belong to its installed package, not the user workspace; '
+        'do not try to open those package-relative paths with workspace file tools. '
         'Explain limitations and checks that were not run in the final response. '
         f'Writing authorized: {workspace.allow_write}. '
         f'Available checks: {", ".join(workspace.checks) or "none"}.\n\n'
@@ -150,7 +154,7 @@ def instructions(workspace: Any) -> str:
 
 
 def payload_size(messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> int:
-    return len(json.dumps({'messages': messages, 'tools': tools}).encode('utf-8'))
+    return len(json.dumps({'messages': messages, 'tools': tools}, ensure_ascii=False).encode('utf-8'))
 
 
 def shrink_tool_message(message: dict[str, Any]) -> bool:
@@ -199,6 +203,15 @@ def compact_history(messages: list[dict[str, Any]], tools: list[dict[str, Any]],
                 return
             if message.get('role') == role:
                 shrink(message)
+    # If one tool round alone exceeds the budget, retain metadata and call/result
+    # pairing while compacting its oldest large values. Otherwise a few valid reads
+    # can make the next model request impossible.
+    for role, shrink in (('tool', shrink_tool_message), ('assistant', shrink_assistant_message)):
+        for message in messages[protected_from:]:
+            if payload_size(messages, tools) <= budget:
+                return
+            if message.get('role') == role:
+                shrink(message)
 
 
 def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
@@ -206,10 +219,13 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
     tools = workspace.definitions()
     messages: list[dict[str, Any]] = [{'role': 'system', 'content': instructions(workspace)},
                                       {'role': 'user', 'content': task}]
+    max_payload = getattr(client, 'max_payload', MAX_PAYLOAD)
+    if max_payload < payload_size(messages, tools) + CONTEXT_RESERVE:
+        raise AgentError('The context limit is too small for the base instructions and tool definitions.')
     for _ in range(max_steps):
         # Protect the latest round: the model needs the results it just requested.
         assistant_turns = [i for i, m in enumerate(messages) if m['role'] == 'assistant']
-        compact_history(messages, tools, getattr(client, 'max_payload', MAX_PAYLOAD) - 8_000,
+        compact_history(messages, tools, max_payload - CONTEXT_RESERVE,
                         assistant_turns[-1] if assistant_turns else len(messages))
         message = client.complete(messages, tools)
         calls = message.get('tool_calls') or []

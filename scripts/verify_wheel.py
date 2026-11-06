@@ -22,9 +22,11 @@ def main() -> None:
                    'assert "# Senior Software Engineer" in instructions(Workspace(".")); '
                    'assert files("sse_skill").joinpath("NOTICE").is_file(); '
                    'assert files("sse_skill").joinpath("references").joinpath("api-currency.md").is_file(); '
+                   'assert files("sse_skill").joinpath("evals").joinpath("evals.json").is_file(); '
                    'print("Installed wheel and resources are available outside the checkout.")')
-        subprocess.run([str(python), '-I', '-c', command], cwd=directory, check=True)
-        subprocess.run([str(python), '-I', '-m', 'sse_agent.evals', 'list'], cwd=directory, check=True)
+        subprocess.run([str(python), '-I', '-X', 'utf8', '-c', command], cwd=directory, check=True)
+        subprocess.run([str(python), '-I', '-X', 'utf8', '-m', 'sse_agent.evals', 'list'],
+                       cwd=directory, check=True)
 
 
 if __name__ == '__main__':

@@ -22,7 +22,7 @@ packages = ["sse_agent", "sse_skill"]
 package-dir = {sse_skill = "skills/senior-software-engineer"}
 
 [tool.setuptools.package-data]
-sse_skill = ["SKILL.md", "LICENSE", "NOTICE", "references/*.md", "references/sources/*.md", "evals/*.md"]
+sse_skill = ["SKILL.md", "LICENSE", "NOTICE", "references/*.md", "references/sources/*.md", "evals/*.md", "evals/*.json"]
 
 [tool.setuptools.dynamic]
 version = { attr = "sse_agent.__version__" }
@@ -36,11 +36,12 @@ select = ["E", "F", "W", "B", "UP", "I"]
 
 [tool.mypy]
 python_version = "3.11"
+strict = true
 check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
-files = ["sse_agent"]
+files = ["sse_agent", "scripts"]
 
 [tool.ruff.lint.isort]
 force-sort-within-sections = true

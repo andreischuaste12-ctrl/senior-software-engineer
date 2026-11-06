@@ -1,6 +1,6 @@
 ---
 name: senior-software-engineer
-description: Analyze, implement, debug, review, and refactor existing software through repository inspection, version-aware decisions, and evidence-based validation. Use for bugs, features, architecture, performance, and code review in any language whose relevant toolchain can be inspected. Do not use for generic writing or unvalidated claims of universal support.
+description: Analyze, implement, debug, review, and refactor existing software through repository inspection, version-aware decisions, and evidence-based validation. Use for bugs, features, architecture, performance, and code review when repository engineering is the primary task. For greenfield frontend design, visual UX/UI audits, or SKILL.md package audits, use a dedicated workflow and apply this skill only to the repository engineering within it. Do not use for generic writing or unvalidated claims of universal support.
 license: Apache-2.0
 ---
 
@@ -46,10 +46,12 @@ rewrite. Without reproduction, label static evidence and hypotheses accurately.
 
 ## 3. Verify compatibility and design
 
-Use [ecosystem references](references/ecosystems.md) only for languages involved in
-the task. Listed tools are options, not installation requirements. Use
-[knowledge guidance](references/knowledge.md), [API currency](references/api-currency.md),
-and the [URL matrix](references/url-matrix.md) within their stated limits.
+When the host exposes package references, use [ecosystem references](references/ecosystems.md)
+only for languages involved in the task. Listed tools are options, not installation
+requirements. Use [knowledge guidance](references/knowledge.md),
+[API currency](references/api-currency.md), and the [URL matrix](references/url-matrix.md)
+within their stated limits. If the host does not expose them, rely on repository
+evidence and state any unresolved uncertainty.
 
 - Confirm declared, resolved, and installed versions. Prefer repository wrappers and
   scripts. Do not regenerate lockfiles or upgrade dependencies without a task need.

@@ -137,6 +137,47 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(len(sizes), 5)
         self.assertLessEqual(max(sizes), Reader.max_payload)
 
+    def test_large_results_from_one_round_are_compacted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sample = "x = 'action λ'\n" * 3500
+            for index in range(4):
+                with open(f'{directory}/f{index}.py', 'w', encoding='utf-8') as stream:
+                    stream.write(sample)
+            workspace = Workspace(directory)
+            sizes = []
+            compacted = []
+
+            class Reader:
+                max_payload = 250_000
+                step = 0
+
+                def complete(self, messages, tools):
+                    sizes.append(payload_size(messages, tools))
+                    self.step += 1
+                    if self.step == 1:
+                        return {'role': 'assistant', 'content': None, 'tool_calls': [
+                            {'id': str(index), 'type': 'function', 'function': {
+                                'name': 'read_file', 'arguments': json.dumps({'path': f'f{index}.py'})}}
+                            for index in range(4)]}
+                    compacted.extend(json.loads(message['content']) for message in messages
+                                     if message['role'] == 'tool' and 'omitted' in message['content'])
+                    return {'role': 'assistant', 'content': 'done'}
+
+            self.assertEqual(run(Reader(), workspace, 'read all four files'), 'done')
+        self.assertEqual(len(sizes), 2)
+        self.assertLessEqual(max(sizes), Reader.max_payload)
+        self.assertTrue(compacted)
+
+    def test_context_limit_must_fit_base_instructions(self):
+        class Tiny:
+            max_payload = 100
+
+            def complete(self, messages, tools):
+                self.fail('complete must not be called')
+
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(AgentError, 'too small'):
+            run(Tiny(), Workspace(directory), 'task')
+
 
 class CliTests(unittest.TestCase):
     def test_parse_checks(self):
