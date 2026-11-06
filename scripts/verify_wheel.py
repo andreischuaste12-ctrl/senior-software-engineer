@@ -23,6 +23,9 @@ def main() -> None:
                    'assert files("sse_skill").joinpath("NOTICE").is_file(); '
                    'assert files("sse_skill").joinpath("references").joinpath("api-currency.md").is_file(); '
                    'assert files("sse_skill").joinpath("evals").joinpath("evals.json").is_file(); '
+                   'from sse_agent.references import REFERENCE_NAMES, reference_text; '
+                   'assert all(reference_text(name) for name in REFERENCE_NAMES); '
+                   'assert "note" in Workspace(".").execute("project_overview", {}); '
                    'print("Installed wheel and resources are available outside the checkout.")')
         subprocess.run([str(python), '-I', '-X', 'utf8', '-c', command], cwd=directory, check=True)
         subprocess.run([str(python), '-I', '-X', 'utf8', '-m', 'sse_agent.evals', 'list'],

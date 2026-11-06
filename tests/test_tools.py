@@ -329,7 +329,8 @@ class EditTests(ToolsTestCase):
         self.write('a.txt', 'x')
         read_only = Workspace(self.root)
         names = {item['function']['name'] for item in read_only.definitions()}
-        self.assertEqual(names, {'list_files', 'search_text', 'read_file'})
+        self.assertEqual(names, {'list_files', 'search_text', 'read_file', 'project_overview',
+                                 'read_log', 'read_reference'})
         result = read_only.execute('replace_in_file', {'path': 'a.txt', 'old': 'x', 'new': 'y',
                                                        'expected_sha256': 'a' * 64})
         self.assertIn('error', result)
