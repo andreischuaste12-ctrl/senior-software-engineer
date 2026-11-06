@@ -4,8 +4,7 @@
 
 This reference supports an agent that analyzes, implements, refactors, and debugs
 software in multiple languages. It is an English project edition of foundational
-material supplied by the project owner on November 5, 2026. It is independent of
-the unreviewed external skill listed in CONTRIBUTING.md.
+material supplied by the project owner on November 5, 2026.
 
 The recommendations are contextual heuristics. The CLI does not include RAG, a
 dedicated sandbox, MCP integration, or automatic memory updates. Real-model

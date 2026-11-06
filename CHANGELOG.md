@@ -54,7 +54,7 @@
 - Corrected evaluator call accounting, path normalization, decimal-contract
   coverage, evaluation schema metadata, and knowledge-base provenance hashes.
 - Added a security policy, code of conduct, issue forms, pull-request template,
-  CODEOWNERS, and an original review of the external architecture reference.
+  and CODEOWNERS.
 
 ## 0.5.0 - 2026-11-06
 

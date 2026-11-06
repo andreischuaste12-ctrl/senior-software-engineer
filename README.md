@@ -99,9 +99,7 @@ endpoints must still be checked when used.
 Everyone is welcome to contribute ideas, bug reports, documentation, evaluation
 cases, and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
 request. Review the [Code of Conduct](CODE_OF_CONDUCT.md) and report security
-issues through the private process in [SECURITY.md](SECURITY.md). External
-references may inform original work, but third-party text and code must not be
-copied without a license review.
+issues through the private process in [SECURITY.md](SECURITY.md).
 
 ## License
 
