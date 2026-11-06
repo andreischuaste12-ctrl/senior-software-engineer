@@ -13,8 +13,8 @@ jobs:
     name: Lint and types
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: Install linters
@@ -22,7 +22,7 @@ jobs:
       - name: Ruff
         run: python -m ruff check .
       - name: Mypy
-        run: python -m mypy
+        run: python -m mypy --strict
 
   tests:
     strategy:
@@ -34,8 +34,8 @@ jobs:
     env:
       PYTHONUTF8: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: CLI help
@@ -47,3 +47,5 @@ jobs:
           python -m pip install -e .
           sse-agent --version
           python -m sse_agent.evals list
+      - name: Standalone wheel outside checkout
+        run: python scripts/verify_wheel.py

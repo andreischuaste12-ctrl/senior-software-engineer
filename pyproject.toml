@@ -17,7 +17,11 @@ sse-agent = "sse_agent.__main__:main"
 
 [tool.setuptools]
 # Layout plano com vários diretórios de topo: liste o pacote explicitamente.
-packages = ["sse_agent"]
+packages = ["sse_agent", "sse_skill"]
+package-dir = {sse_skill = "skills/senior-software-engineer"}
+
+[tool.setuptools.package-data]
+sse_skill = ["SKILL.md", "LICENSE", "NOTICE", "references/*.md", "references/sources/*.md", "evals/*.md"]
 
 [tool.setuptools.dynamic]
 version = { attr = "sse_agent.__version__" }

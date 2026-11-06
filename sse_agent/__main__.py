@@ -2,28 +2,14 @@
 
 import argparse
 import json
-import math
 import os
 import sys
 
 from . import __version__
-from .agent import MAX_PAYLOAD, AgentError, Client, run
+from .agent import DEFAULT_BASE_URL, MAX_PAYLOAD, AgentError, Client, run
+from .arguments import positive, positive_float
 from .platforms import split_command
 from .tools import Workspace
-
-
-def positive(value: str) -> int:
-    number = int(value)
-    if number <= 0:
-        raise argparse.ArgumentTypeError('Use um inteiro positivo.')
-    return number
-
-
-def positive_float(value: str) -> float:
-    number = float(value)
-    if not math.isfinite(number) or number <= 0:
-        raise argparse.ArgumentTypeError('Use um número positivo.')
-    return number
 
 
 def parse_checks(shell_style: list[str], json_style: list[str]) -> dict[str, list[str]]:
@@ -50,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'sse_agent {__version__}')
     parser.add_argument('--workspace', default='.', help='Repositório autorizado (padrão: diretório atual).')
     parser.add_argument('--allow-write', action='store_true', help='Autorize criar/substituir arquivos de texto.')
+    parser.add_argument('--allow-remote', action='store_true',
+                        help='Autorize enviar conteúdo à API externa configurada.')
+    parser.add_argument('--deny', action='append', default=[], metavar='GLOB', help='Exclua caminhos; repetível.')
+    parser.add_argument('--allow-file', action='append', default=[], metavar='GLOB',
+                        help='Restrinja arquivos a estes padrões; repetível. Exclusões continuam prevalecendo.')
     parser.add_argument('--check', action='append', default=[], metavar='NOME=COMANDO',
                         help='Autorize um comando sem shell, por exemplo tests=python -m unittest discover.')
     parser.add_argument('--check-json', action='append', default=[], metavar='NOME=JSON',
@@ -72,18 +63,23 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Também se aplica ao entrypoint instalado sse-agent, não só a python -m.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     args = build_parser().parse_args(argv)
     try:
         if not args.task.strip():
             raise AgentError('Informe uma tarefa não vazia.')
         checks = parse_checks(args.check, args.check_json)
         workspace = Workspace(args.workspace, args.allow_write, checks, args.timeout,
-                              pass_env=args.check_env)
+                              pass_env=args.check_env, deny=args.deny, allow_files=args.allow_file)
         client = Client(os.environ.get('SSE_API_KEY') or os.environ.get('OPENAI_API_KEY'),
                         os.environ.get('SSE_MODEL'),
-                        os.environ.get('SSE_BASE_URL', 'https://api.openai.com/v1'),
-                        args.api_timeout, args.max_context_bytes, retries=args.api_retries)
-        print('Arquivos lidos e tarefa serão enviados ao provedor configurado. '
+                        os.environ.get('SSE_BASE_URL', DEFAULT_BASE_URL),
+                        args.api_timeout, args.max_context_bytes, retries=args.api_retries,
+                        allow_remote=args.allow_remote)
+        print('Arquivos lidos e tarefa serão enviados ao endpoint configurado. '
               'Checks autorizados executam código local.', file=sys.stderr)
         result = run(client, workspace, args.task, args.max_steps,
                      notify=lambda name: print(f'Ferramenta: {name}', file=sys.stderr))
@@ -98,8 +94,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == '__main__':
-    # UTF-8 inclusive com stdout redirecionado no Windows.
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, 'reconfigure'):
-            stream.reconfigure(encoding='utf-8', errors='replace')
     raise SystemExit(main())

@@ -146,7 +146,7 @@ class AgentTests(unittest.TestCase):
             with self.subTest(base=base), self.assertRaises(AgentError):
                 Client('test', 'model', base)
         with self.assertRaises(AgentError):
-            Client(None, 'model')
+            Client(None, None)
 
     def test_round_limit_and_malformed_call_before_effects(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -204,7 +204,9 @@ class AgentTests(unittest.TestCase):
                     except Exception as error:
                         failures.append(str(error))
                         self.send_error(500)
-            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            # O teste usa loopback numérico; não faz DNS reverso em server_bind.
+            with patch('http.server.socket.getfqdn', return_value='localhost'):
+                server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:

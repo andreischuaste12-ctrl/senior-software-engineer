@@ -5,9 +5,15 @@ import shlex
 import signal
 import subprocess
 import sys
+from typing import TypedDict
 
 
-def split_command(command):
+class ProcessOptions(TypedDict, total=False):
+    creationflags: int
+    start_new_session: bool
+
+
+def split_command(command: str) -> list[str]:
     if sys.platform != 'win32':
         return shlex.split(command)
     # Use a interpretação nativa de aspas e barras, sem cmd.exe/PowerShell.
@@ -31,13 +37,13 @@ def split_command(command):
         free(ctypes.cast(argv, ctypes.c_void_p))
 
 
-def process_options():
+def process_options() -> ProcessOptions:
     if sys.platform == 'win32':
         return {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
     return {'start_new_session': True}
 
 
-def stop_process_tree(process):
+def stop_process_tree(process: subprocess.Popen[bytes]) -> None:
     if sys.platform == 'win32':
         system_root = os.environ.get('SystemRoot', r'C:\Windows')
         taskkill = os.path.join(system_root, 'System32', 'taskkill.exe')

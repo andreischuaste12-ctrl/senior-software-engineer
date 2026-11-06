@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 import contextlib
+from importlib.resources import files
+from importlib.resources.abc import Traversable
 import json
 from pathlib import Path
 import time
@@ -11,6 +13,7 @@ from urllib import error, parse, request
 MAX_PAYLOAD = 250_000
 RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRY_DELAY = 30.0
+DEFAULT_BASE_URL = 'http://127.0.0.1:1234/v1'
 # Campos de resultados antigos de ferramentas que sobrevivem à compactação de contexto.
 KEEP_KEYS = ('path', 'sha256', 'written', 'replacements', 'name', 'exit_code',
              'timed_out', 'error', 'total_lines')
@@ -38,20 +41,24 @@ def retry_delay(attempt: int, header: str | None) -> float:
 
 class Client:
     def __init__(self, api_key: str | None, model: str | None,
-                 base_url: str = 'https://api.openai.com/v1', timeout: float = 120,
+                 base_url: str = DEFAULT_BASE_URL, timeout: float = 120,
                  max_payload: int = MAX_PAYLOAD, retries: int = 0,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 sleep: Callable[[float], None] = time.sleep, allow_remote: bool = False) -> None:
         url = parse.urlsplit(base_url)
-        local_http = url.scheme == 'http' and url.hostname in {'localhost', '127.0.0.1', '::1'}
+        local = url.hostname in {'localhost', '127.0.0.1', '::1'}
+        local_http = url.scheme == 'http' and local
         if (not url.hostname or url.username or url.password or url.query or url.fragment or
                 not (url.scheme == 'https' or local_http)):
             raise AgentError('Use uma URL HTTPS sem credenciais, query ou fragmento; '
                              'HTTP é permitido apenas para API local em loopback.')
-        if not api_key or not model:
-            raise AgentError('Configure SSE_API_KEY (ou OPENAI_API_KEY) e SSE_MODEL.')
+        if not local and not allow_remote:
+            raise AgentError('API externa bloqueada. Use um servidor local ou autorize o envio com --allow-remote.')
+        if not model or (not local and not api_key):
+            raise AgentError('Configure SSE_MODEL; APIs externas também exigem SSE_API_KEY (ou OPENAI_API_KEY).')
         if isinstance(retries, bool) or not isinstance(retries, int) or not 0 <= retries <= 3:
             raise AgentError('O número de retentativas precisa ser um inteiro entre 0 e 3.')
         self.api_key, self.model = api_key, model
+        self.local = local
         self.endpoint = base_url.rstrip('/') + '/chat/completions'
         self.timeout = timeout
         self.max_payload = max_payload
@@ -63,11 +70,16 @@ class Client:
         Esses status não garantem ausência de processamento ou cobrança. Falhas
         de conexão e timeouts nunca são repetidos automaticamente.
         """
-        req = request.Request(self.endpoint, data=payload, headers={
-            'Content-Type': 'application/json', 'Authorization': 'Bearer ' + self.api_key})
+        headers = {'Content-Type': 'application/json'}
+        if self.api_key:
+            headers['Authorization'] = 'Bearer ' + self.api_key
+        req = request.Request(self.endpoint, data=payload, headers=headers)
         for attempt in range(self.retries + 1):
             try:
-                with request.build_opener(NoRedirect).open(req, timeout=self.timeout) as response:
+                # Chamadas locais não devem ser encaminhadas ao proxy do ambiente.
+                opener = request.build_opener(NoRedirect, request.ProxyHandler({})) if self.local else (
+                    request.build_opener(NoRedirect))
+                with opener.open(req, timeout=self.timeout) as response:
                     raw: bytes = response.read(2_000_001)
                 if len(raw) > 2_000_000:
                     raise AgentError('Resposta da API excede o limite local.')
@@ -107,14 +119,16 @@ class Client:
 
 
 def instructions(workspace: Any) -> str:
-    package = Path(__file__).resolve().parent.parent / 'skills' / 'senior-software-engineer'
+    package: Traversable = Path(__file__).resolve().parent.parent / 'skills' / 'senior-software-engineer'
+    if not (package / 'SKILL.md').is_file():
+        package = files('sse_skill')
     paths = [package / 'SKILL.md', package / 'references' / 'ecosystems.md',
              package / 'references' / 'knowledge.md',
              package / 'references' / 'api-currency.md']
     try:
         text = '\n\n'.join(path.read_text(encoding='utf-8') for path in paths)
     except OSError:
-        raise AgentError('Pacote da skill ausente; execute a partir do checkout completo.') from None
+        raise AgentError('Recursos da skill ausentes; reinstale o pacote.') from None
     policy = (
         'Você é o agente deste projeto. Responda no idioma do usuário. '
         'Use ferramentas para obter evidências; não invente leituras, alterações ou testes. '
@@ -201,8 +215,8 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
         message = client.complete(messages, tools)
         calls = message.get('tool_calls') or []
         content = message.get('content')
-        if not isinstance(calls, list) or len(calls) > 8:
-            raise AgentError('Resposta excede o limite de chamadas por rodada ou tem formato inválido.')
+        if not isinstance(calls, list) or len(calls) > 128:
+            raise AgentError('Formato inválido ou limite absoluto de 128 chamadas por rodada excedido.')
         if not calls:
             if not isinstance(content, str) or not content.strip():
                 raise AgentError('A API não entregou conteúdo final.')
@@ -226,10 +240,12 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
             except (KeyError, TypeError, ValueError):
                 raise AgentError('Chamada de ferramenta malformada; rodada não executada.') from None
         messages.append({'role': 'assistant', 'content': content, 'tool_calls': calls})
-        for call_id, name, arguments in parsed:
+        for index, (call_id, name, arguments) in enumerate(parsed):
             if notify:
                 notify(name)
-            result = workspace.execute(name, arguments)
+            result = (workspace.execute(name, arguments) if index < 8 else
+                      {'error': 'Limite de 8 ferramentas executadas nesta rodada. '
+                                'Solicite esta operação em outra rodada; ela não foi executada.'})
             messages.append({'role': 'tool', 'tool_call_id': call_id,
                              'content': json.dumps(result, ensure_ascii=False)})
     raise AgentError('Limite de rodadas atingido; tarefa incompleta. Revise as alterações locais.')

@@ -18,9 +18,11 @@ com modelos reais; testes de integração simulados não demonstram essa eficác
 
 ## Executar o agente
 
-Requer Python 3.11+ em Windows, Linux ou macOS, chave de API e modelo com function calling.
-Não exige pacotes externos. Configure `SSE_API_KEY` (ou `OPENAI_API_KEY`) e
-`SSE_MODEL` no ambiente; nunca grave credenciais no repositório.
+Requer Python 3.11+ em Windows, Linux ou macOS e servidor de IA compatível com
+function calling. Usa endpoint local por padrão (`http://127.0.0.1:1234/v1`);
+configure `SSE_MODEL` com o modelo disponível. Não baixa nem inicia modelos.
+APIs externas exigem `--allow-remote`, URL HTTPS e credencial configurada com segurança.
+Filtros `--deny` e `--allow-file` restringem os arquivos acessíveis ao agente.
 
 No Windows, abra o PowerShell na pasta deste repositório:
 
@@ -46,6 +48,10 @@ Lint e tipos: `python -m ruff check .` e `python -m mypy`.
 
 O workflow de testes inclui Windows, Linux e macOS. Os resultados no Windows
 dependem da execução desse workflow; testes locais em Linux não os substituem.
+
+Para instalar o CLI independente do checkout: `py -3 -m pip install .`.
+A skill e suas referências acompanham o pacote. Veja o [changelog](CHANGELOG.md)
+e o [processo de release](docs/releases.md).
 
 ## Usar a skill
 

@@ -1,7 +1,6 @@
 """Ferramentas limitadas ao workspace escolhido pelo operador."""
 
 from collections.abc import Iterator, Sequence
-from fnmatch import fnmatchcase
 import hashlib
 import os
 from pathlib import Path, PureWindowsPath
@@ -10,6 +9,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from .paths import matches_pattern
 from .platforms import process_options, stop_process_tree
 
 MAX_FILE_BYTES = 64_000          # texto devolvido ou gravado por chamada
@@ -21,15 +21,17 @@ OUTPUT_LIMIT = 16_000
 OUTPUT_HEAD = 2_000
 
 # Diretórios com credenciais: nunca acessíveis.
-SECRET_DIRS = {'.git', '.aws', '.ssh'}
+SECRET_DIRS = {'.git', '.aws', '.ssh', '.kube', '.gnupg', '.docker'}
 # Dependências e caches: não são código-fonte; nunca acessíveis.
 DEPENDENCY_DIRS = {'.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache',
-                   '.mypy_cache', '.ruff_cache'}
+                   '.mypy_cache', '.ruff_cache', 'vendor', '.next', 'coverage'}
 # Artefatos de build: ocultos da listagem apenas na raiz do workspace, porque
 # pacotes legítimos (src/build, lib/target) podem usar esses nomes.
 ARTIFACT_DIRS = {'dist', 'build', 'target'}
 ENV_TEMPLATES = ('.env.example', '.env.sample', '.env.template')
-SECRET_FILES = {'credentials', 'credentials.json', 'secrets.json', 'id_rsa', 'id_ed25519'}
+SECRET_FILES = {'credentials', 'credentials.json', 'secrets.json', 'id_rsa', 'id_ed25519',
+                'id_ecdsa', 'id_dsa', '.npmrc', '.netrc', '.pypirc', '.git-credentials',
+                '.htpasswd', 'wp-config.php', 'secrets.yaml', 'secrets.yml'}
 
 # Allowlist de variáveis repassadas aos checks (nomes em maiúsculas; LC_* também passa).
 CHECK_ENV_ALLOWLIST = {
@@ -48,7 +50,8 @@ def protected(part: str) -> bool:
         return True
     if lower == '.envrc' or lower == '.env' or lower.startswith('.env.'):
         return lower not in ENV_TEMPLATES
-    return lower.endswith(('.pem', '.key', '.p12', '.pfx'))
+    return lower.endswith(('.pem', '.key', '.p12', '.pfx', '.jks', '.env', '.tfstate', '.tfvars')) or (
+        '.tfstate.' in lower or lower.endswith('.tfvars.json'))
 
 
 def linked(path: Path) -> bool:
@@ -84,13 +87,6 @@ def uses_crlf(data: bytes) -> bool:
     return crlf > 0 and crlf > data.count(b'\n') - crlf
 
 
-def matches_pattern(relative: str, pattern: str | None) -> bool:
-    if not pattern:
-        return True
-    return fnmatchcase(relative, pattern) or (
-        '/' not in pattern and fnmatchcase(relative.rsplit('/', 1)[-1], pattern))
-
-
 def schema(name: str, description: str, properties: dict[str, Any],
            required: list[str]) -> dict[str, Any]:
     return {'type': 'function', 'function': {
@@ -108,7 +104,8 @@ def integer_argument(value: Any, name: str, minimum: int = 1) -> int:
 class Workspace:
     def __init__(self, root: str | Path, allow_write: bool = False,
                  checks: dict[str, list[str]] | None = None, timeout: float = 60,
-                 pass_env: Sequence[str] = ()) -> None:
+                 pass_env: Sequence[str] = (), deny: Sequence[str] = (),
+                 allow_files: Sequence[str] = ()) -> None:
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise ValueError('O workspace precisa ser um diretório.')
@@ -116,10 +113,21 @@ class Workspace:
         self.checks = checks or {}
         self.timeout = timeout
         self.pass_env = tuple(pass_env)
+        self.deny = tuple(deny)
+        self.allow_files = tuple(allow_files)
+        if any(not isinstance(pattern, str) or not pattern for pattern in (*self.deny, *self.allow_files)):
+            raise ValueError('Padrões de acesso precisam ser textos não vazios.')
+
+    def denied(self, relative: str) -> bool:
+        return any(matches_pattern(relative.casefold(), pattern.casefold()) for pattern in self.deny)
+
+    def allowed_file(self, relative: str) -> bool:
+        return not self.allow_files or any(matches_pattern(relative.casefold(), pattern.casefold())
+                                           for pattern in self.allow_files)
 
     # ------------------------------------------------------------------ caminhos
 
-    def path(self, relative: Any) -> Path:
+    def path(self, relative: Any, directory: bool = False) -> Path:
         if not isinstance(relative, str) or not relative or '\x00' in relative:
             raise ValueError('Caminho relativo inválido.')
         path = Path(relative.replace('\\', '/'))
@@ -133,20 +141,25 @@ class Workspace:
         candidate = self.root
         for part in path.parts:
             candidate = candidate / part
+            if self.denied(candidate.relative_to(self.root).as_posix()):
+                raise ValueError('Caminho excluído pelo operador.')
             if linked(candidate):
                 raise ValueError('Links simbólicos e reparse points não são permitidos nas ferramentas de arquivo.')
         if not candidate.resolve().is_relative_to(self.root):
             raise ValueError('Caminho fora do workspace.')
+        if not directory and not self.allowed_file(candidate.relative_to(self.root).as_posix()):
+            raise ValueError('Arquivo fora da lista autorizada pelo operador.')
         return candidate
 
     def definitions(self) -> list[dict[str, Any]]:
         definitions = [
             schema('list_files', 'Liste arquivos visíveis (até 1000). Opcional: pattern '
                    '(glob, ex.: "*.py" ou "src/**/*.ts") para filtrar.',
-                   {'pattern': {'type': 'string'}}, []),
+                   {'pattern': {'type': 'string'}, 'directory': {'type': 'string'}}, []),
             schema('search_text', 'Busque um texto literal nos arquivos (como grep -F). '
                    'Devolve caminho, linha e trecho. Use antes de ler arquivos inteiros.',
                    {'query': {'type': 'string'}, 'pattern': {'type': 'string'},
+                    'directory': {'type': 'string'},
                     'ignore_case': {'type': 'boolean'},
                     'max_results': {'type': 'integer', 'minimum': 1, 'maximum': MAX_SEARCH_RESULTS}},
                    ['query']),
@@ -179,28 +192,34 @@ class Workspace:
 
     # ------------------------------------------------------------------ leitura
 
-    def _walk(self) -> Iterator[str | None]:
+    def _walk(self, directory: str = '.') -> Iterator[str | None]:
         """Caminhos relativos legíveis; yield None sinaliza que o limite de varredura foi atingido."""
         scanned = 0
-        for base, dirs, files in os.walk(self.root, followlinks=False):
+        start = self.path(directory, directory=True)
+        if not start.is_dir():
+            raise ValueError('Diretório de busca não encontrado.')
+        for base, dirs, files in os.walk(start, followlinks=False):
             at_root = Path(base) == self.root
             dirs[:] = sorted(d for d in dirs if not protected(d) and
                              not (at_root and d.lower() in ARTIFACT_DIRS) and
+                             not self.denied((Path(base) / d).relative_to(self.root).as_posix()) and
                              not linked(Path(base) / d))
             for name in sorted(files):
                 scanned += 1
                 if scanned > MAX_SCANNED_FILES:
                     yield None
                     return
-                if protected(name) or linked(Path(base) / name):
+                relative = (Path(base) / name).relative_to(self.root).as_posix()
+                if (protected(name) or linked(Path(base) / name) or self.denied(relative) or
+                        not self.allowed_file(relative)):
                     continue
                 yield (Path(base) / name).relative_to(self.root).as_posix()
 
-    def list_files(self, pattern: str | None = None) -> dict[str, Any]:
+    def list_files(self, pattern: str | None = None, directory: str = '.') -> dict[str, Any]:
         if pattern is not None and not isinstance(pattern, str):
             raise ValueError('pattern precisa ser texto.')
         found: list[str] = []
-        for relative in self._walk():
+        for relative in self._walk(directory):
             if relative is None:
                 return {'files': found, 'truncated': True}
             if not matches_pattern(relative, pattern):
@@ -250,7 +269,7 @@ class Workspace:
                 'total_lines': len(lines), 'truncated': truncated}
 
     def search_text(self, query: str, pattern: str | None = None, ignore_case: bool = False,
-                    max_results: int = 100) -> dict[str, Any]:
+                    max_results: int = 100, directory: str = '.') -> dict[str, Any]:
         if not isinstance(query, str) or not query:
             raise ValueError('query precisa ser um texto não vazio.')
         if pattern is not None and not isinstance(pattern, str):
@@ -258,7 +277,7 @@ class Workspace:
         limit = min(integer_argument(max_results, 'max_results'), MAX_SEARCH_RESULTS)
         needle = query.lower() if ignore_case else query
         matches: list[dict[str, Any]] = []
-        for relative in self._walk():
+        for relative in self._walk(directory):
             if relative is None:
                 return {'matches': matches, 'truncated': True}
             if not matches_pattern(relative, pattern):
@@ -273,8 +292,10 @@ class Workspace:
                 continue  # ilegível, binário ou fora da política: ignore silenciosamente
             for number, line in enumerate(text.split('\n'), 1):
                 if needle in (line.lower() if ignore_case else line):
+                    position = (line.lower() if ignore_case else line).find(needle)
+                    begin = max(0, position - 60)
                     matches.append({'path': relative, 'line': number,
-                                    'text': line.rstrip('\r')[:200]})
+                                    'text': line.rstrip('\r')[begin:begin + 200]})
                     if len(matches) >= limit:
                         return {'matches': matches, 'truncated': True}
         return {'matches': matches, 'truncated': False}
