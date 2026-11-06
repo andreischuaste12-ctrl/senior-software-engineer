@@ -1,69 +1,49 @@
-# Conhecimento complementar revisado
+# Reviewed supplemental knowledge
 
-Síntese do arquivo “base-conhecimento-engenharia-software.md” fornecido pelo
-proponente em 5 de novembro de 2026. As etiquetas de verificação e as versões
-do original não foram verificadas pelo projeto; não são fatos certificados.
-Esta referência complementa a skill sem substituir a política do host.
+This is an original project synthesis of material supplied by Andrei Schuaste on
+November 5, 2026. Submission labels and version snapshots are not certified facts.
 
-## [S1] Conhecimento estável e volátil
+## Stable and volatile knowledge
 
-Princípios de design são heurísticas relativamente estáveis; versões, suporte,
-CVEs, deprecações e sintaxe nova exigem evidência específica da versão-alvo.
-Não importar tabelas de “versão atual” para uma implementação sem conferir.
-Uma proposta PEP/JEP/RFC aprovada não comprova entrega na versão instalada.
-Políticas de suporte podem variar por distribuidor, especialmente no Java.
+Design principles are relatively stable heuristics. Releases, support windows,
+CVEs, deprecations, and new syntax require target-version evidence. An accepted
+proposal does not prove delivery in an installed release, and Java support terms
+can differ by distributor.
 
-Ao citar um fato externo, distinguir observação própria, relato da fonte e
-inferência. Registrar URL, versão/revisão, data da consulta e alcance da leitura.
-HTTP 200 comprova acesso, não a veracidade ou atualidade de uma afirmação.
-Agregadores como endoflife.date ajudam a descobrir informações; decisões críticas
-devem confrontar a documentação do fornecedor pertinente.
+Distinguish direct observation, a source's claim, and inference. Record URL,
+version or revision, access date, and reading scope. HTTP 200 proves access only.
+Aggregators aid discovery; critical decisions should use the relevant maintainer or
+vendor source.
 
-## [S2] Catálogo adicional de padrões
+## Additional patterns
 
-Além do catálogo básico, considerar Prototype para cópia de objetos com semântica
-clara de estado compartilhado; Bridge para eixos independentes de variação;
-Composite para árvores; Flyweight para estado compartilhado imutável com benefício
-medido; Iterator para percurso, preferindo recursos nativos.
+Prototype, Bridge, Composite, Flyweight, and Iterator can solve specific object
+copying, independent variation, tree, shared-state, and traversal problems.
+Mediator can centralize communication but also responsibility. Memento requires a
+clear snapshot boundary. Template Method relies on inheritance, while Strategy
+supports composition. Visitor favors new operations on stable structures.
+Interpreter fits small grammars; dedicated parsers may be more appropriate.
 
-Mediator pode centralizar comunicação, mas também concentrar responsabilidades.
-Memento exige definir o que um snapshot captura e como restaurar recursos externos.
-Template Method depende de herança; Strategy pode facilitar composição. Visitor
-favorece novas operações em estruturas estáveis, com custo quando os tipos mudam.
-Interpreter só é adequado a gramáticas pequenas; parsers dedicados podem ser mais
-apropriados. Nenhum desses padrões é um requisito para código de qualidade.
+No pattern is a prerequisite for quality.
 
-## [S3] Arquitetura, confiabilidade e testes
+## Architecture, reliability, and testing
 
-Portas/adaptadores e camadas podem proteger domínio e fronteiras de mudança,
-sem exigir uma arquitetura inteira para uma tarefa pequena. Twelve-Factor é uma
-referência para certos serviços, não regra universal para CLI, embarcados ou desktop.
+Ports/adapters and layers can protect domain logic and change boundaries without
+requiring a wholesale architecture. Twelve-Factor guidance targets certain service
+types and is not a universal rule for CLIs, embedded software, or desktop apps.
 
-Escolher o equilíbrio entre testes unitários, integração, contrato e E2E conforme
-os riscos. Uma pirâmide não impõe contagens fixas. Para serviços, definir SLI/SLO
-e orçamento de erro quando isso ajudar decisões operacionais. Relacionar medições
-a cenários reais e, se pertinente, custo ou resultado do negócio.
+Balance unit, integration, contract, and end-to-end tests according to risk. A
+pyramid does not prescribe counts. Define SLIs, SLOs, and error budgets when they
+support operational decisions. Use OWASP ASVS/Top 10, NIST SSDF, and SLSA only
+within their applicable scope; a checklist is not certification.
 
-Consultar OWASP ASVS/Top 10, NIST SSDF e SLSA conforme a superfície de risco.
-Verificar edição e requisitos aplicáveis antes de declarar conformidade; uma
-checklist preenchida não equivale a certificação ou auditoria completa.
+## Knowledge evolution
 
-## [S4] Atualização futura de conhecimento
+A cache may store source, revision or hash, access time, and expiration. TTL depends
+on risk and cannot guarantee freshness. Old publication dates do not invalidate
+documentation for an old installed version. When execution and docs disagree,
+investigate version, configuration, flags, and platform.
 
-Cache com fonte, revisão/hash, data e expiração pode reduzir consultas; TTL depende
-do risco. Não transformar sugestões como 6h ou 7d em garantias de segurança.
-Datas de publicação antigas não invalidam documentação da versão instalada.
-Quando execução e documentação divergirem, investigar configuração, flags,
-plataforma e versão; um teste isolado não substitui a especificação.
-
-Registro de fontes, feeds, consulta a advisories, cache, cron e RAG são propostas
-futuras. O CLI inicial não implementa essas integrações nem atualiza a base
-silenciosamente. Mudanças de conhecimento devem gerar um diff revisável no escopo
-autorizado, sem gravar dados sensíveis.
-
-## [S5] Atualidade de código
-
-O segundo anexo fornecido pelo proponente acrescenta orientações de migração e
-verificação de pacotes. Use a [revisão de atualidade de APIs](api-currency.md):
-ela distingue edição de toolchain, warnings de falhas, e automação de migração
-de garantia de correção. Os snapshots e etiquetas do original não são certificados.
+Source registries, advisory feeds, scheduled jobs, RAG, and persistent memory are
+future proposals. The CLI does not implement them. Knowledge changes must produce
+an authorized, reviewable diff without sensitive data.

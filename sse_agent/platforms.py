@@ -1,4 +1,4 @@
-"""Adaptação de argumentos e encerramento de processos para Windows e POSIX."""
+"""Argument parsing and process termination for Windows and POSIX."""
 
 import os
 import shlex
@@ -16,7 +16,7 @@ class ProcessOptions(TypedDict, total=False):
 def split_command(command: str) -> list[str]:
     if sys.platform != 'win32':
         return shlex.split(command)
-    # Use a interpretação nativa de aspas e barras, sem cmd.exe/PowerShell.
+    # Use native quote and backslash parsing without cmd.exe or PowerShell.
     import ctypes
     from ctypes import wintypes
     count = ctypes.c_int()
@@ -30,7 +30,7 @@ def split_command(command: str) -> list[str]:
         return []
     argv = parse(command, ctypes.byref(count))
     if not argv:
-        raise OSError(ctypes.get_last_error(), 'Não foi possível interpretar o comando Windows.')
+        raise OSError(ctypes.get_last_error(), 'Could not parse the Windows command.')
     try:
         return [argv[index] for index in range(count.value)]
     finally:

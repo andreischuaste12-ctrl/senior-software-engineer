@@ -29,19 +29,21 @@ class ToolsTestCase(unittest.TestCase):
 
 
 class PathPolicyTests(ToolsTestCase):
-    def test_nested_build_target_dist_are_readable_and_listed(self):
-        for name in ('build', 'target', 'dist'):
+    def test_nested_artifact_names_are_readable_and_listed(self):
+        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
             self.write(f'src/{name}/module.py', 'x = 1\n')
         files = self.workspace.list_files()['files']
-        for name in ('build', 'target', 'dist'):
+        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
             self.assertIn(f'src/{name}/module.py', files)
             self.assertEqual(self.workspace.read_file(f'src/{name}/module.py')['content'], 'x = 1\n')
 
     def test_root_artifact_directories_are_hidden_from_listing_only(self):
-        self.write('build/out.js', 'compiled')
+        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+            self.write(f'{name}/out.js', 'compiled')
         self.write('app.py', 'x')
         self.assertEqual(self.workspace.list_files()['files'], ['app.py'])
-        self.assertEqual(self.workspace.read_file('build/out.js')['content'], 'compiled')
+        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+            self.assertEqual(self.workspace.read_file(f'{name}/out.js')['content'], 'compiled')
 
     def test_env_lookalikes_and_templates_are_readable_but_secrets_are_not(self):
         for name in ('.environment.md', '.env.example', '.env.sample', '.env.template'):
@@ -122,31 +124,31 @@ class EditTests(ToolsTestCase):
         digest = self.workspace.read_file('a.txt')['sha256']
         tracemalloc.start()
         try:
-            with self.assertRaisesRegex(ValueError, 'Resultado excede'):
+            with self.assertRaisesRegex(ValueError, 'Result exceeds'):
                 self.workspace.replace_in_file('a.txt', 'a', 'b' * 500, digest, replace_all=True)
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        # A leitura usa buffer de até 2 MB. Não deve alocar o resultado de 10 MB
-        # nem a cópia codificada, que antes somavam aproximadamente 20 MB.
+        # Reading uses a buffer of at most 2 MB. It must not allocate the 10 MB result
+        # or its encoded copy, which previously added up to about 20 MB.
         self.assertLess(peak, 4_000_000)
         self.assertEqual(target.read_bytes(), b'a' * 20_000)
 
     def test_expansion_limit_counts_utf8_bytes_and_crlf(self):
-        cases = [(b'x' * 1000, 'x', 'é' * 1001),
-                 (b'x\r\n' * 1000, 'x\n', 'é' * 1000 + '\n')]
+        cases = [(b'x' * 1000, 'x', 'λ' * 1001),
+                 (b'x\r\n' * 1000, 'x\n', 'λ' * 1000 + '\n')]
         for current, old, new in cases:
             target = self.write('a.txt', current)
             digest = sha(current)
-            with self.subTest(old=old), self.assertRaisesRegex(ValueError, 'Resultado excede'):
+            with self.subTest(old=old), self.assertRaisesRegex(ValueError, 'Result exceeds'):
                 self.workspace.replace_in_file('a.txt', old, new, digest, replace_all=True)
             self.assertEqual(target.read_bytes(), current)
 
     def test_unique_replacement_accepts_unicode_result(self):
         self.write('a.txt', 'a' * 20_000)
         digest = self.workspace.read_file('a.txt')['sha256']
-        result = self.workspace.replace_in_file('a.txt', 'a' * 20_000, 'é' * 100, digest)
-        self.assertEqual(result['sha256'], sha(('é' * 100).encode()))
+        result = self.workspace.replace_in_file('a.txt', 'a' * 20_000, 'λ' * 100, digest)
+        self.assertEqual(result['sha256'], sha(('λ' * 100).encode()))
 
     def test_replace_in_file_unique_match(self):
         self.write('a.py', 'a = 1\nb = 2\n')
@@ -159,11 +161,11 @@ class EditTests(ToolsTestCase):
     def test_replace_in_file_rejects_stale_missing_and_ambiguous(self):
         self.write('a.py', 'x\nx\n')
         digest = self.workspace.read_file('a.py')['sha256']
-        with self.assertRaisesRegex(ValueError, '2 vezes'):
+        with self.assertRaisesRegex(ValueError, '2 times'):
             self.workspace.replace_in_file('a.py', 'x', 'y', digest)
-        with self.assertRaisesRegex(ValueError, 'não encontrado'):
+        with self.assertRaisesRegex(ValueError, 'not found'):
             self.workspace.replace_in_file('a.py', 'z', 'y', digest)
-        with self.assertRaisesRegex(ValueError, 'mudou'):
+        with self.assertRaisesRegex(ValueError, 'changed'):
             self.workspace.replace_in_file('a.py', 'x', 'y', 'f' * 64)
         with self.assertRaises(ValueError):
             self.workspace.replace_in_file('a.py', '', 'y', digest)
@@ -220,7 +222,7 @@ class CheckTests(ToolsTestCase):
         result = workspace.run_check('noisy')
         self.assertTrue(result['truncated'])
         self.assertIn('FAIL: assertion at the end', result['output'])
-        self.assertIn('omitidos', result['output'])
+        self.assertIn('omitted', result['output'])
         self.assertLess(len(result['output']), 16_200)
 
     def test_environment_is_an_allowlist(self):

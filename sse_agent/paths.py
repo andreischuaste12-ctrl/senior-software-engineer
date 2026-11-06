@@ -1,4 +1,4 @@
-"""Glob por componentes, com ** representando zero ou mais diretórios."""
+"""Component-aware glob matching where ** represents zero or more directories."""
 
 from fnmatch import fnmatchcase
 from functools import cache

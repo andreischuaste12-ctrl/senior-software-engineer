@@ -1,70 +1,72 @@
-# Diretrizes de contribuição
+# Contributing guidelines
 
-## Como participar
+## How to participate
 
-Todas as pessoas são bem-vindas, independentemente do nível de experiência.
-Contribuições podem incluir ideias, relatos de problemas, documentação, propostas
-de validação, código do agente e cenários de avaliação da skill.
+Contributors of every experience level are welcome. Contributions may include
+ideas, bug reports, documentation, validation proposals, agent code, and skill
+evaluation scenarios.
 
-Abra uma issue para descrever um problema ou discutir uma proposta. Para enviar
-uma alteração, crie um fork, trabalhe em uma branch e abra um pull request para
-`main`, explicando o objetivo da mudança e como ela foi verificada. Mantenha cada
-pull request focado em um objetivo e siga as diretrizes abaixo.
+Open an issue to describe a problem or discuss a proposal. For a change, fork the
+repository, work on a branch, and open a pull request against `main`. Explain the
+goal and the evidence used to validate it. Keep each pull request focused.
 
-## Conteúdo original e referências externas
+## Original work and external references
 
-Estude conceitos e métodos de referências externas e escreva instruções e
-implementações próprias. Não execute `npx skills add`, não incorpore
-dependências das referências e não copie seus arquivos, textos ou código para
-este projeto.
+Study concepts and methods from external references, then write original
+instructions and implementations. Do not run `npx skills add`, import dependencies
+from a reference merely to copy its behavior, or copy its files, prose, or code.
 
-Não apresente material de terceiros como original. Se uma etapa futura exigir
-reutilizar ou adaptar trechos, revise primeiro a licença aplicável, a permissão
-de reutilização e as obrigações de atribuição e preservação de avisos. A licença
-Apache-2.0 deste projeto não substitui a licença de uma fonte externa.
+Never present third-party material as original work. Before reusing or adapting any
+passage, review its license, permission to reuse it, attribution duties, and notice
+requirements. This project's Apache-2.0 license does not replace an external
+source's license.
 
-Submeta apenas conteúdo que você tenha direito de contribuir. Salvo indicação
-expressa em contrário, contribuições intencionalmente submetidas para inclusão
-seguem a Apache-2.0, conforme sua seção 5.
+Submit only material you have the right to contribute. Unless explicitly stated
+otherwise, intentional contributions submitted for inclusion are licensed under
+Apache-2.0 as described in section 5 of that license.
 
-## Registro de estudo
+## Study record
 
-Para cada referência, registre:
+For every external reference, record:
 
-- Fonte: URL e revisão ou data consultada, quando houver acesso.
-- Estado: pendente ou analisada, com o alcance real da leitura.
-- Licença e avisos: o que foi efetivamente verificado na fonte.
-- Conceitos estudados: síntese própria, sem transcrever a referência.
-- Contribuição esperada: problema do projeto que o conceito poderia ajudar a resolver.
-- Validação proposta: evidência necessária para avaliar uma implementação própria.
+- Source URL and the revision or access date.
+- Status and the exact scope that was read.
+- License and notices that were actually verified.
+- An original summary of the concepts studied.
+- The project problem those concepts may address.
+- Evidence needed to evaluate an original implementation.
 
-Separe constatações sobre a fonte de hipóteses para o nosso projeto. Uma proposta
-de melhoria não demonstra eficácia até ser implementada e validada.
+Separate observations about a source from hypotheses for this project. A proposal
+does not demonstrate effectiveness until it is implemented and validated.
 
-## Referência de arquitetura
+## Architecture reference
 
-- Fonte: <https://github.com/mattpocock/skills>, skill
+- Source: <https://github.com/mattpocock/skills>, skill
   `improve-codebase-architecture`.
-- Estado em 5 de novembro de 2026: **análise pendente**. A tentativa de acesso ao
-  GitHub falhou porque não foi possível conectar ao proxy do ambiente.
-- Revisão, licença e avisos: não verificados.
-- Conceitos estudados: nenhum; o conteúdo ainda não foi examinado.
-- Contribuição esperada: avaliar se a abordagem oferece conceitos úteis para
-  uma futura capacidade própria de análise e melhoria de arquitetura. Trata-se
-  de uma intenção de estudo, sem atribuir capacidades à referência.
-- Próximo passo: quando o acesso estiver disponível, ler a documentação, a skill
-  e os avisos de licença sem instalar seu conteúdo; registrar a revisão consultada
-  e uma síntese própria dos conceitos úteis e de suas possíveis aplicações.
-- Validação proposta: após a leitura e a definição de uma proposta própria,
-  estabelecer casos representativos e critérios de aceite antes da implementação.
-  Nenhuma validação da referência foi executada nesta etapa.
+- Status on November 5, 2026: **analysis pending**. The GitHub request failed
+  because the environment proxy could not be reached.
+- Revision, license, and notices: not verified.
+- Concepts studied: none; the content has not been examined.
+- Expected contribution: determine whether the approach contains concepts useful
+  for a future original architecture-analysis capability.
+- Next step: when access is available, read the documentation, skill, and license
+  notices without installing its content. Record the revision and an original
+  summary of useful concepts and possible applications.
+- Proposed validation: define representative cases and acceptance criteria before
+  implementing any original approach. No validation of the reference has occurred.
 
-## Revisão das contribuições
+## Review and validation
 
-Verifique a origem do conteúdo, a coerência com o escopo e os links documentais.
-Para mudanças executáveis, rode `python -m unittest discover -s tests`,
-`python -m ruff check .` e `python -m mypy` (mesmas verificações do CI) e
-documente os resultados, distinguindo aprovações, falhas e verificações não
-executadas. Correções de comportamento devem incluir um teste que falhe sem a
-correção. Mudanças apenas documentais exigem revisão do diff, dos links e da
-integridade da licença.
+Check content provenance, scope, documentation links, and license integrity. For
+executable changes, run:
+
+```text
+python -m unittest discover -s tests
+python -m ruff check .
+python -m mypy --strict
+python scripts/verify_wheel.py
+```
+
+Report passes, failures, skips, and checks that were not run. Behavioral fixes
+should include a regression test that fails without the fix. Documentation-only
+changes require a careful diff and link review rather than artificial app tests.

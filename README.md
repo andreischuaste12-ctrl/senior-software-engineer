@@ -1,121 +1,91 @@
 # senior-software-engineer
 
-Criado por **[Andrei Schuaste](https://github.com/andreischuaste12-ctrl)**.
-Projeto de código aberto, desenvolvido com a participação da comunidade.
+Created by **[Andrei Schuaste](https://github.com/andreischuaste12-ctrl)**.
+This is an open-source project developed with community participation.
 
-Projeto para desenvolver um agente de engenharia de software capaz de construir,
-analisar, otimizar e refatorar código em diferentes linguagens de programação.
-A eficácia deverá ser demonstrada por validações específicas para cada tarefa,
-como testes relevantes, compilação, análise estática e medições de desempenho
-quando aplicáveis.
+The project develops a software engineering agent that can build, analyze,
+optimize, and refactor code across programming languages. Effectiveness must be
+demonstrated for each task through relevant tests, compilation, static analysis,
+performance measurements, or other appropriate evidence.
 
-## Estado atual
+## Current status
 
-O projeto contém um agente CLI em Python, uma skill própria em formato `SKILL.md`
-e bases de conhecimento revisadas. O agente usa uma API de IA com ferramentas
-locais controladas pelo operador. A eficácia por linguagem permanece a validar
-com modelos reais; testes de integração simulados não demonstram essa eficácia.
+The repository contains a Python CLI agent, a self-contained `SKILL.md` package,
+reviewed knowledge references, and deterministic evaluation fixtures. The agent
+uses a tool-capable AI API and local tools controlled by the operator. Real-model
+effectiveness has not yet been measured; scripted integration tests do not prove it.
 
-## Executar o agente
+## Run the agent
 
-Requer Python 3.11+ em Windows, Linux ou macOS e servidor de IA compatível com
-function calling. Usa endpoint local por padrão (`http://127.0.0.1:1234/v1`);
-configure `SSE_MODEL` com o modelo disponível. Não baixa nem inicia modelos.
-APIs externas exigem `--allow-remote`, URL HTTPS e credencial configurada com segurança.
-Filtros `--deny` e `--allow-file` restringem os arquivos acessíveis ao agente.
+Python 3.11 or newer is required on Windows, Linux, or macOS. The default endpoint
+is local (`http://127.0.0.1:1234/v1`). Start a compatible Chat Completions server
+separately and set `SSE_MODEL` to an available model. The agent does not download
+or start models. External APIs require an HTTPS URL, credentials, and the explicit
+`--allow-remote` option.
 
-No Windows, abra o PowerShell na pasta deste repositório:
+On Windows, open PowerShell in this repository:
 
 ```powershell
-py -3 -m sse_agent --workspace "C:\Projetos\Meu Projeto" "Analise este projeto e proponha melhorias"
+$env:SSE_MODEL = "LOCAL_MODEL_ID"
+py -3 -m sse_agent --workspace "C:\Projects\My Project" "Analyze this project and propose improvements"
 ```
 
-Em Linux/macOS, use `python -m sse_agent` e o caminho local do projeto.
+On Linux or macOS, use `python -m sse_agent` and a local project path. File tools
+are read-only by default. See the [CLI guide](docs/cli-agent.md) for writing,
+checks, privacy controls, provider selection, and execution limits.
 
-Por padrão, as ferramentas de arquivo são somente leitura. Consulte o
-[guia do CLI](docs/agente-cli.md) para habilitar escrita, definir checks, selecionar
-o provedor e entender os limites de execução e de envio de código à API.
-
-Para executar os testes locais, sem credenciais ou chamadas a um modelo real:
+Run local validation without credentials or real-model calls:
 
 ```powershell
 py -3 -m unittest discover -s tests -v
+py -3 -m ruff check .
+py -3 -m mypy --strict
+py -3 scripts/verify_wheel.py
 ```
 
-Para medir o comportamento com um modelo real, use o harness automático
-(`python -m sse_agent.evals run`, ver o [guia do CLI](docs/agente-cli.md)).
-Lint e tipos: `python -m ruff check .` e `python -m mypy`.
+The CI matrix covers Windows, Ubuntu, and macOS. Install the standalone CLI with
+`py -3 -m pip install .`. The skill and its references are included in the wheel.
+See the [changelog](CHANGELOG.md) and [release process](docs/releases.md).
 
-O workflow de testes inclui Windows, Linux e macOS. Os resultados no Windows
-dependem da execução desse workflow; testes locais em Linux não os substituem.
+## Use the skill
 
-Para instalar o CLI independente do checkout: `py -3 -m pip install .`.
-A skill e suas referências acompanham o pacote. Veja o [changelog](CHANGELOG.md)
-e o [processo de release](docs/releases.md).
+The [senior-software-engineer skill](skills/senior-software-engineer/SKILL.md)
+guides bug fixes, features, refactoring, architecture analysis, and performance
+work. Copy the entire `skills/senior-software-engineer/` directory into a host
+that supports `SKILL.md` packages and follow that host's activation mechanism.
+Installation paths and invocation rules vary by host.
 
-## Usar a skill
+Review the [evaluation scenarios](skills/senior-software-engineer/evals/scenarios.md)
+before making effectiveness claims. The skill does not install compilers,
+services, or integrations, train a model, or guarantee universal language support.
 
-A skill [senior-software-engineer](skills/senior-software-engineer/SKILL.md) orienta
-correção de bugs, funcionalidades, refatoração, análise de arquitetura e performance.
-O pacote é autocontido em `skills/senior-software-engineer/`, com referências por
-ecossistema e cenários de avaliação.
+## Knowledge base
 
-Em um host compatível com skills `SKILL.md`, copie essa pasta inteira para o
-diretório de skills indicado pelo host e siga seu mecanismo de ativação. O nome
-da skill é `senior-software-engineer`; caminhos de instalação e invocação variam
-entre hosts. A instalação não foi executada neste repositório.
+The [foundational knowledge](docs/foundational-knowledge.md) covers engineering
+principles, architecture, testing, security, performance, and evidence-based API
+use. The [operating guidelines](docs/operating-guidelines.md) turn those concepts
+into a practical workflow. Initial ecosystem coverage includes Python,
+JavaScript/TypeScript, Go, Rust, Java, and C#/.NET.
 
-Exemplo de solicitação ao host com a skill carregada: “Use a skill
-senior-software-engineer para corrigir este bug, respeitando as versões do projeto
-e demonstrando a correção com testes relevantes.”
+The [supplemental knowledge](docs/supplemental-knowledge.md),
+[API currency review](docs/knowledge-base-v2-review.md), and
+[URL matrix](skills/senior-software-engineer/references/url-matrix.md) record
+additional material supplied by the project owner and the project's reviewed
+conclusions. Submitted Portuguese material was converted into English project
+editions; source hashes remain recorded for provenance. Version claims and remote
+endpoints must still be checked when used.
 
-Consulte os [cenários de avaliação](skills/senior-software-engineer/evals/scenarios.md)
-antes de declarar eficácia. A skill não instala compiladores, MCPs ou serviços,
-não treina o modelo e não garante suporte universal.
+## Contributions
 
-## Base de conhecimento
+Everyone is welcome to contribute ideas, bug reports, documentation, evaluation
+cases, and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
+request. External references may inform original work, but third-party text and
+code must not be copied without a license review.
 
-A [base fundacional de engenharia](docs/base-fundacional.md) reúne princípios de
-design, critérios para padrões de projeto, orientações por linguagem e um fluxo
-de consulta e validação de APIs. Ela foi revisada a partir do texto fornecido
-pelo proponente do projeto.
+## License
 
-A [proposta de instruções operacionais](docs/instrucoes-operacionais.md) traduz
-essa base em um roteiro usado para elaborar a primeira skill. Ambos são documentos de referência;
-não ativam um agente, integrações externas ou atualização automática de memória.
-A cobertura inicial inclui Python, JavaScript/TypeScript, Go, Rust, Java e C#/.NET,
-sem representar suporte implementado ou eficácia comprovada nessas linguagens.
+Copyright 2026 Andrei Schuaste. See [NOTICE](NOTICE).
 
-A [base complementar](docs/conhecimento-complementar.md) registra o novo material
-fornecido pelo usuário, sua versão original e a síntese revisada usada pela skill.
-As afirmações de versões e verificações do original não foram certificadas pelo projeto.
-
-A [matriz de URLs e endpoints](skills/senior-software-engineer/references/url-matrix.md)
-reúne referências para outros ecossistemas, registries e padrões, com o documento
-original preservado e critérios de consulta. A inclusão não ativa acessos externos;
-os endpoints e suas alegações de cobertura ainda precisam de verificação.
-
-A [revisão da segunda base](docs/revisao-base-v2.md) registra as novas orientações
-de atualidade de código, correções e verificações pontuais em fontes dos mantenedores.
-O CLI carrega a síntese revisada; o anexo original fica preservado como referência,
-sem garantia de acerto integral ou atualização automática.
-
-## Referências e contribuições
-
-Este é um projeto de código aberto, e todas as pessoas são bem-vindas para
-contribuir, independentemente do nível de experiência. Você pode propor ideias,
-relatar problemas, melhorar a documentação e enviar melhorias por pull requests.
-Consulte as [diretrizes de contribuição](CONTRIBUTING.md) para começar.
-
-Referências externas serão estudadas para compreender conceitos e métodos e
-orientar conteúdo original. Nesta etapa, nenhuma skill de terceiros será
-instalada ou incorporada. Consulte [CONTRIBUTING.md](CONTRIBUTING.md) para as
-diretrizes e o registro da referência de arquitetura pendente de análise.
-
-## Licença
-
-Copyright 2026 Andrei Schuaste. Consulte o [aviso de autoria](NOTICE).
-
-O conteúdo original deste projeto que seus titulares puderem licenciar é
-disponibilizado sob a [Apache License 2.0](LICENSE) (`Apache-2.0`). Essa licença
-não altera os direitos ou as licenças de materiais externos citados.
+Original content that its copyright holders can license is available under the
+[Apache License 2.0](LICENSE) (`Apache-2.0`). This license does not change the
+rights or licenses of cited external material.

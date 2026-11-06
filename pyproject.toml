@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "senior-software-engineer"
 dynamic = ["version"]
-description = "Agente CLI de engenharia de software guiado pela skill senior-software-engineer."
+description = "A software engineering CLI agent guided by the senior-software-engineer skill."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "skills/senior-software-engineer/LICENSE", "skills/senior-software-engineer/NOTICE"]
 authors = [{ name = "Andrei Schuaste" }]
 dependencies = []
 
@@ -16,7 +17,7 @@ dependencies = []
 sse-agent = "sse_agent.__main__:main"
 
 [tool.setuptools]
-# Layout plano com vários diretórios de topo: liste o pacote explicitamente.
+# Flat layout with multiple top-level directories: list packages explicitly.
 packages = ["sse_agent", "sse_skill"]
 package-dir = {sse_skill = "skills/senior-software-engineer"}
 

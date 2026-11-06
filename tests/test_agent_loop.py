@@ -67,7 +67,7 @@ class RetryTests(unittest.TestCase):
 
     def test_client_errors_and_connection_failures_are_not_retried(self):
         for side_effect, pattern in ((failure(400), 'HTTP 400'), (failure(401), 'HTTP 401'),
-                                     (URLError('down'), 'conexão'), (TimeoutError(), 'timeout')):
+                                     (URLError('down'), 'connection'), (TimeoutError(), 'timeout')):
             client = self.client()
             with self.subTest(pattern=pattern), patch('sse_agent.agent.request.build_opener') as opener:
                 opener.return_value.open.side_effect = side_effect
@@ -126,14 +126,14 @@ class ContextTests(unittest.TestCase):
                 def complete(self, messages, tools):
                     sizes.append(payload_size(messages, tools))
                     if self.step == 4:
-                        return {'role': 'assistant', 'content': 'feito'}
+                        return {'role': 'assistant', 'content': 'done'}
                     name = 'abcd'[self.step]
                     self.step += 1
                     return {'role': 'assistant', 'content': None, 'tool_calls': [{
                         'id': str(self.step), 'type': 'function', 'function': {
                             'name': 'read_file', 'arguments': json.dumps({'path': f'{name}.txt'})}}]}
 
-            self.assertEqual(run(Reader(), workspace, 'leia tudo', max_steps=6), 'feito')
+            self.assertEqual(run(Reader(), workspace, 'read everything', max_steps=6), 'done')
         self.assertEqual(len(sizes), 5)
         self.assertLessEqual(max(sizes), Reader.max_payload)
 
@@ -149,7 +149,7 @@ class CliTests(unittest.TestCase):
                    (['a=x', 'a=y'], []), (['a=x'], ['a=["y"]']),
                    ([], ['a=not-json']), ([], ['a={"x": 1}']), ([], ['a=[1]']), ([], ['a=[""]'])]
         if sys.platform != 'win32':
-            # CommandLineToArgvW (Windows) aceita aspas sem fechamento; só o shlex as recusa.
+            # CommandLineToArgvW accepts unmatched quotes on Windows; only shlex rejects them.
             invalid.append((['a="unterminated'], []))
         for shell, json_style in invalid:
             with self.subTest(shell=shell, json=json_style), self.assertRaises(AgentError):
@@ -157,10 +157,10 @@ class CliTests(unittest.TestCase):
 
     @unittest.skipIf(sys.platform == 'win32', 'Regra do shlex (POSIX).')
     def test_unterminated_quote_is_reported_as_a_clear_error(self):
-        with self.assertRaisesRegex(AgentError, 'ilegível'):
+        with self.assertRaisesRegex(AgentError, 'unreadable'):
             parse_checks(['a="unterminated'], [])
 
-    @unittest.skipUnless(sys.platform == 'win32', 'Semântica do parser nativo Windows.')
+    @unittest.skipUnless(sys.platform == 'win32', 'Native Windows parser semantics.')
     def test_windows_accepts_unterminated_quote_as_one_argument(self):
         self.assertEqual(parse_checks(['a="unterminated'], []), {'a': ['unterminated']})
 
@@ -169,7 +169,7 @@ class CliTests(unittest.TestCase):
             with self.subTest(option=option), patch('sse_agent.__main__.Client') as client, \
                     patch('sse_agent.__main__.run', return_value='ok'), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                self.assertEqual(main(['tarefa', *option]), 0)
+                self.assertEqual(main(['task', *option]), 0)
                 self.assertEqual(client.call_args.kwargs['retries'], expected)
 
     def test_version_flag_and_timeouts(self):
@@ -186,7 +186,7 @@ class CliTests(unittest.TestCase):
     def test_main_reports_configuration_errors_without_traceback(self):
         errors = io.StringIO()
         with contextlib.redirect_stderr(errors), patch.dict('os.environ', {}, clear=True):
-            self.assertEqual(main(['tarefa']), 1)
+            self.assertEqual(main(['task']), 1)
         self.assertIn('SSE_API_KEY', errors.getvalue())
 
 

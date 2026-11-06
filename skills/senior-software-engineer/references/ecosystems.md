@@ -1,70 +1,52 @@
-# Referências por ecossistema
+# Ecosystem references
 
-Leia somente a seção aplicável. Exemplos abaixo não são comandos universais nem
-instruções para instalar ferramentas. Primeiro use scripts, pins e configurações
-do repositório. Comandos de formatadores devem operar em modo de verificação na
-validação; reescrita de arquivos só no escopo da implementação autorizada.
+Read only the sections relevant to the task. These are options, not universal
+installation commands. Prefer repository scripts, pins, and configuration.
 
 ## Python
 
-- Inspecione pyproject.toml, lockfile, requirements, pins de Python e CI. Respeite
-  uv, Poetry ou venv/pip já adotados; não misture gerenciadores.
-- Use pytest, Ruff e mypy/Pyright se configurados. Ruff não substitui testes ou
-  typecheck. Execute as ferramentas no ambiente do projeto.
-- Anote contratos relevantes, evite defaults mutáveis e libere recursos com
-  context managers. Dataclasses e bibliotecas de validação dependem do caso;
-  não adicione Pydantic por padrão.
+Inspect `pyproject.toml`, locks, requirements, Python pins, and CI. Respect the
+adopted environment manager. Use configured pytest, Ruff, mypy, or Pyright.
+Type annotations do not replace boundary validation. Avoid mutable defaults and
+release resources with context managers.
 
-## JavaScript / TypeScript
+## JavaScript and TypeScript
 
-- Inspecione package.json, packageManager, lockfile, pins de runtime, tsconfig e
-  scripts. Não misture npm, pnpm, Yarn ou Bun; respeite Node.js/Bun/Deno reais.
-- Prefira scripts existentes de build, lint, typecheck e testes. tsc --noEmit só
-  é apropriado quando compatível com a configuração, incluindo referências entre
-  projetos. Playwright é útil para fluxos de navegador quando já necessário.
-- Prefira unknown e narrowing para entradas desconhecidas. Justifique usos de any
-  localmente; não imponha strict ao repositório inteiro em uma correção pequena.
-  Tipos TypeScript não validam payloads em runtime.
+Inspect `package.json`, `packageManager`, lockfile, runtime pins, `tsconfig`,
+and scripts. Do not mix npm, pnpm, Yarn, Bun, Node.js, or Deno workflows. Prefer
+existing build, lint, type-check, and test scripts. TypeScript types do not validate
+runtime payloads.
 
 ## Go
 
-- Inspecione go.mod, go.sum, go.work quando houver, diretivas de toolchain e CI.
-- Se compatíveis com o escopo, use go build ./..., go vet ./... e go test ./....
-  Selecione pacotes relevantes em monorepos. go vet não substitui build ou testes.
-  Use -race quando plataforma, recursos e objetivo justificarem.
-- Contextualize erros preservando wrapping, propague context.Context em operações
-  canceláveis e limite goroutines. Não introduza interfaces sem consumidor real.
+Inspect `go.mod`, `go.sum`, `go.work`, toolchain directives, and CI. Use
+relevant `go build`, `go vet`, and `go test` scopes. Vet does not replace build
+or tests. Preserve error wrapping, pass `context.Context` through cancelable work,
+and bound goroutines.
 
 ## Rust
 
-- Inspecione Cargo.toml, Cargo.lock, rust-toolchain e workspace. Respeite edição,
-  MSRV, features e targets; não habilite --all-features sem verificar conflitos.
-- Use cargo check/test e Clippy conforme o projeto; --locked é apropriado quando
-  o lockfile existente deve permanecer fixo. cargo fmt --check verifica formato.
-  Auditoria requer ferramenta e base disponíveis; relate quando não executada.
-- Propague erros recuperáveis; unwrap/expect exigem invariantes justificáveis.
-  Evite clones desnecessários sem comprometer clareza ou forçar otimização.
+Inspect `Cargo.toml`, `Cargo.lock`, `rust-toolchain`, workspace, edition, MSRV,
+features, and targets. Use appropriately scoped Cargo check/test, Clippy, and
+`cargo fmt --check`. Do not assume `--all-features` combinations are valid.
+Avoid unjustified `unwrap`, `expect`, and cloning.
 
 ## Java
 
-- Inspecione pom.xml ou arquivos Gradle, wrappers, toolchains e módulos. Use
-  ./mvnw ou ./gradlew quando disponíveis, com perfis e targets documentados.
-- Execute testes e build pertinentes. Testcontainers exige runtime de containers;
-  não descreva testes ignorados por falta dele como aprovados.
-- Records, sealed types e virtual threads dependem da versão e da carga. Preserve
-  limites de pools, transações e contratos, mesmo com concorrência mais barata.
+Inspect Maven or Gradle files, wrappers, toolchains, profiles, and modules. Prefer
+`mvnw` or `gradlew`. Container-based tests require their runtime. Records,
+sealed types, and virtual threads depend on version and workload; preserve
+transaction, pool, and public-contract boundaries.
 
-## C# / .NET
+## C# and .NET
 
-- Inspecione global.json, solution/projetos, TargetFramework(s), NuGet.Config e
-  locks. Respeite fontes privadas sem exibir credenciais.
-- Use dotnet restore/build/test conforme scripts e CI. --locked-mode pressupõe
-  lockfile e fluxo compatíveis. Não use --no-restore sem restore válido.
-- Preserve cancelamento, descarte de recursos e fluxos async. AOT e migrações de
-  framework exigem compatibilidade própria, não são melhorias automáticas.
+Inspect `global.json`, solutions, projects, target frameworks, NuGet configuration,
+and lockfiles. Respect private sources without exposing credentials. Use repository
+restore/build/test flows. Preserve cancellation, async behavior, and resource
+disposal. AOT and framework migrations require explicit compatibility work.
 
-## Outras linguagens
+## Other languages
 
-Descubra manifestos, compilador/runtime, ferramentas e testes no próprio projeto.
-Consulte documentação oficial da versão-alvo quando necessário. Declare limites
-de conhecimento ou execução e não transplante convenções de outra linguagem.
+Discover the project's manifests, compiler or runtime, tests, and conventions.
+Consult official target-version sources when needed. State execution limits and do
+not transplant another language's conventions without evidence.

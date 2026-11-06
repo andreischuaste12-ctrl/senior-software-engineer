@@ -1,3 +1,3 @@
-"""Agente de engenharia de software com ferramentas locais explícitas."""
+"""Software engineering agent with explicit local tools."""
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'

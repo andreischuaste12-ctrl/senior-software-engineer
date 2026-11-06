@@ -1,4 +1,4 @@
-"""Regressões da auditoria: apenas fixtures sintéticos e API simulada."""
+"""Audit regressions using only synthetic fixtures and a simulated API."""
 
 import contextlib
 import io
@@ -59,12 +59,13 @@ class AuditRegressions(unittest.TestCase):
             with patch('sse_agent.tools.MAX_SCANNED_FILES', 1):
                 self.assertEqual(workspace.list_files(directory='src')['files'], ['src/a.ts'])
                 self.assertEqual(workspace.search_text('needle', directory='src')['matches'][0]['path'], 'src/a.ts')
-            for invalid in ('../', '/etc', 'vendor'):
+            for invalid in ('../', '/etc'):
                 with self.subTest(path=invalid), self.assertRaises(ValueError):
                     workspace.list_files(directory=invalid)
 
     def test_many_tools_are_paired_and_excess_can_be_retried(self):
         snapshots = []
+        notifications = []
 
         class Model:
             step = 0
@@ -75,20 +76,21 @@ class AuditRegressions(unittest.TestCase):
                 if self.step == 1:
                     return {'tool_calls': [{'id': str(i), 'type': 'function', 'function': {
                         'name': 'list_files', 'arguments': '{}'}} for i in range(10)]}
-                return {'content': 'feito'}
+                return {'content': 'done'}
 
         with tempfile.TemporaryDirectory() as directory:
             workspace = Workspace(directory)
             with patch.object(workspace, 'execute', wraps=workspace.execute) as execute:
-                self.assertEqual(run(Model(), workspace, 'liste'), 'feito')
+                self.assertEqual(run(Model(), workspace, 'list', notify=notifications.append), 'done')
                 self.assertEqual(execute.call_count, 8)
+                self.assertEqual(len(notifications), 8)
             results = [m for m in snapshots[-1] if m['role'] == 'tool']
             self.assertEqual([r['tool_call_id'] for r in results], [str(i) for i in range(10)])
             self.assertTrue(all('error' in json.loads(r['content']) for r in results[8:]))
 
     def test_remote_endpoint_requires_explicit_authorization(self):
         with patch('sse_agent.agent.request.build_opener') as opener:
-            with self.assertRaisesRegex(AgentError, 'externa bloqueada'):
+            with self.assertRaisesRegex(AgentError, 'External API blocked'):
                 Client('test', 'model', 'https://api.example.com/v1')
             opener.assert_not_called()
         Client('test', 'model', 'https://api.example.com/v1', allow_remote=True)
@@ -113,18 +115,18 @@ class AuditRegressions(unittest.TestCase):
                 if self.step == 1:
                     return {'tool_calls': [{'id': '1', 'type': 'function', 'function': {
                         'name': 'read_file', 'arguments': json.dumps({'path': self.path})}}]}
-                return {'content': 'DEBUG ativo, chave fixa e hosts abertos.'}
+                return {'content': 'DEBUG is enabled, the key is hard-coded, and hosts are unrestricted.'}
 
         for path in ('config.py', './config.py', '.\\config.py'):
-            self.assertEqual(run_scenario(scenarios()['E05'], Model(path))['status'], 'aprovado')
-        self.assertEqual(run_scenario(scenarios()['E05'], Model('.env'))['status'], 'reprovado')
+            self.assertEqual(run_scenario(scenarios()['E05'], Model(path))['status'], 'passed')
+        self.assertEqual(run_scenario(scenarios()['E05'], Model('.env'))['status'], 'failed')
 
     def test_eval_cli_validation_and_local_default_without_paid_calls(self):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(eval_main(['list']), 0)
             self.assertEqual(eval_main(['run', 'unknown']), 2)
             with patch('sse_agent.evals.Client') as client, \
-                    patch('sse_agent.evals.run_scenario', return_value={'status': 'aprovado'}):
+                    patch('sse_agent.evals.run_scenario', return_value={'status': 'passed'}):
                 self.assertEqual(eval_main(['run', 'E05', '--json']), 0)
                 self.assertFalse(client.call_args.kwargs['allow_remote'])
             with self.assertRaises(SystemExit):

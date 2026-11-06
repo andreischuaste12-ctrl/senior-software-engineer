@@ -1,7 +1,7 @@
 {
   "consulted_on": "2026-11-05",
-  "scope": "Verificações pontuais; não certifica integralmente o anexo.",
-  "original_file": "base-conhecimento-engenharia-software-v2-original.md",
+  "scope": "Point-in-time checks; this does not certify the complete submission.",
+  "original_file": "software-engineering-knowledge-base-v2-submitted.md",
   "original_sha256": "e09731d10251938f07f8de32ef2c6150c4a825eb23024d95add07e57653d26c1",
   "sources": [
     {

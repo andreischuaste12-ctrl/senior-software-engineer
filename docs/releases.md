@@ -1,16 +1,16 @@
-# Processo de release
+# Release process
 
-1. Atualizar `sse_agent/__init__.py` e `CHANGELOG.md` com o comportamento final.
-2. Rodar unittest, Ruff e Mypy estrito conforme a configuração do CI.
-3. Executar `python scripts/verify_wheel.py`: construir e instalar wheel num venv
-   descartável, carregar os recursos fora do checkout, listar avaliações sem API.
-4. Exigir CI aprovado em Windows, Ubuntu e macOS, incluindo o teste do wheel.
-5. Revisar permissões, documentação, changelog e diff; verificar autoria dos
-   commits antes da integração. Checks verdes não certificam privacidade integral.
-6. Publicar tags, releases ou artefatos em registry somente quando solicitado.
-   Um push para main não significa publicação de pacote no PyPI.
+The repository does not publish packages automatically. A release candidate must:
 
-Métricas de cobertura devem registrar comando, versão da ferramenta, revisão,
-plataforma, source/omit e se subprocessos foram incluídos. Não há limiar universal
-que prove eficácia. Avaliações com modelo real exigem servidor/modelo configurado
-e fixtures sintéticos; APIs externas exigem opt-in e podem gerar cobrança.
+1. Use an intentional semantic version in `sse_agent.__version__` and update the changelog.
+2. Run unit tests, Ruff, strict mypy, and `scripts/verify_wheel.py`.
+3. Pass the GitHub Actions matrix on Windows, Ubuntu, and macOS for all configured
+   Python versions.
+4. Inspect wheel contents, metadata, bundled skill resources, LICENSE, and NOTICE.
+5. Confirm that no credentials, local build artifacts, or unrelated changes are present.
+6. Record real-model evaluation separately; scripted tests must not be presented as
+   evidence of model effectiveness.
+
+Publishing to PyPI, creating a GitHub release, signing artifacts, or changing
+deployment systems requires explicit authorization and credentials supplied through
+a secure mechanism.

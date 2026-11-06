@@ -56,13 +56,13 @@ class WorkspaceTests(unittest.TestCase):
             (self.root / 'link').symlink_to(self.root / 'sample.py')
         except OSError as error:
             if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
-                self.skipTest('Criação de symlink requer Developer Mode ou privilégio no Windows.')
+                self.skipTest('Creating symlinks requires Developer Mode or privilege on Windows.')
             raise
         with self.assertRaises(ValueError):
             self.workspace.read_file('link')
         self.assertNotIn('link', self.workspace.list_files()['files'])
 
-    @unittest.skipUnless(os.name == 'nt', 'Junction é um recurso do Windows.')
+    @unittest.skipUnless(os.name == 'nt', 'Junctions are a Windows feature.')
     def test_windows_junction_is_not_read_or_listed(self):
         with tempfile.TemporaryDirectory() as outside:
             (Path(outside) / 'private.txt').write_text('outside', encoding='utf-8')
@@ -79,13 +79,13 @@ class WorkspaceTests(unittest.TestCase):
                 junction.rmdir()
 
     def test_unicode_and_space_paths_and_windows_separators(self):
-        folder = self.root / 'código com espaços'
+        folder = self.root / 'code with spaces'
         folder.mkdir()
-        self.workspace.write_file('código com espaços/ação.py', 'print("olá")\n', None)
-        original = self.workspace.read_file('código com espaços\\ação.py')
-        self.workspace.write_file('código com espaços/ação.py', 'print("mundo")\n', original['sha256'])
-        self.assertEqual(self.workspace.read_file('código com espaços/ação.py')['content'],
-                         'print("mundo")\n')
+        self.workspace.write_file('code with spaces/action.py', 'print("hello")\n', None)
+        original = self.workspace.read_file('code with spaces\\action.py')
+        self.workspace.write_file('code with spaces/action.py', 'print("world")\n', original['sha256'])
+        self.assertEqual(self.workspace.read_file('code with spaces/action.py')['content'],
+                         'print("world")\n')
 
     def test_listing_omits_protected_files(self):
         (self.root / '.env').write_text('not-for-the-model')
@@ -133,7 +133,7 @@ class WorkspaceTests(unittest.TestCase):
 
     def test_native_command_quoting_roundtrip(self):
         import shlex
-        parts = [r'C:\Program Files\Python\python.exe', '-c', 'print("olá mundo")',
+        parts = [r'C:\Program Files\Python\python.exe', '-c', 'print("hello world")',
                  'argument with spaces', '', 'trailing\\']
         command = subprocess.list2cmdline(parts) if os.name == 'nt' else shlex.join(parts)
         self.assertEqual(split_command(command), parts)
@@ -164,13 +164,13 @@ class AgentTests(unittest.TestCase):
                 def complete(self, messages, tools):
                     return {'tool_calls': [{'id': '1', 'type': 'function',
                             'function': {'name': 'list_files', 'arguments': '{}'}}]}
-            with self.assertRaisesRegex(AgentError, 'Limite'):
+            with self.assertRaisesRegex(AgentError, 'Round limit'):
                 run(Endless(), workspace, 'task', max_steps=1)
 
     def test_cli_full_http_tool_cycle(self):
         requests = []
         failures = []
-        with tempfile.TemporaryDirectory(prefix='agente ação ') as directory:
+        with tempfile.TemporaryDirectory(prefix='agent action ') as directory:
             root = Path(directory)
             (root / 'example.py').write_bytes(b'before\n')
             original_hash = hashlib.sha256(b'before\n').hexdigest()
@@ -187,7 +187,7 @@ class AgentTests(unittest.TestCase):
                         payload = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                         requests.append(payload)
                         index = len(requests) - 1
-                        message = {'role': 'assistant', 'content': 'Concluído com check aprovado.'}
+                        message = {'role': 'assistant', 'content': 'Completed with a passing check.'}
                         if index < len(actions):
                             name, arguments = actions[index]
                             message = {'role': 'assistant', 'content': None, 'tool_calls': [
@@ -204,7 +204,7 @@ class AgentTests(unittest.TestCase):
                     except Exception as error:
                         failures.append(str(error))
                         self.send_error(500)
-            # O teste usa loopback numérico; não faz DNS reverso em server_bind.
+            # The test uses numeric loopback and performs no reverse DNS in server_bind.
             with patch('http.server.socket.getfqdn', return_value='localhost'):
                 server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -214,8 +214,8 @@ class AgentTests(unittest.TestCase):
                                    SSE_BASE_URL=f'http://127.0.0.1:{server.server_port}/v1')
                 command = [sys.executable, '-m', 'sse_agent', '--workspace', directory,
                            '--allow-write', '--check-json',
-                           'verify=' + json.dumps([sys.executable, '-c', 'print("ação 123")']),
-                           'Altere example.py e valide.']
+                           'verify=' + json.dumps([sys.executable, '-c', 'print("action 123")']),
+                           'Change example.py and validate it.']
                 result = subprocess.run(command, cwd=Path(__file__).resolve().parent.parent,
                                         env=environment, capture_output=True, text=True,
                                         encoding='utf-8', timeout=15)
@@ -226,16 +226,16 @@ class AgentTests(unittest.TestCase):
             self.assertFalse(failures)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / 'example.py').read_text(), 'after\n')
-            self.assertIn('Concluído', result.stdout)
+            self.assertIn('Completed', result.stdout)
             self.assertEqual(len(requests), 5)
             prompt = requests[0]['messages'][0]['content']
             self.assertIn('# Senior Software Engineer', prompt)
-            self.assertIn('[S1]', prompt)
+            self.assertIn('# Reviewed supplemental knowledge', prompt)
             self.assertNotIn('3.15.2', prompt)
             outputs = [json.loads(message['content']) for message in requests[-1]['messages']
                        if message['role'] == 'tool']
             self.assertEqual(outputs[-1]['exit_code'], 0)
-            self.assertEqual(outputs[-1]['output'].strip(), 'ação 123')
+            self.assertEqual(outputs[-1]['output'].strip(), 'action 123')
 
     def test_http_failure_and_invalid_response(self):
         client = Client('not-to-be-printed', 'model')
@@ -247,7 +247,7 @@ class AgentTests(unittest.TestCase):
             self.assertNotIn('private-body', str(caught.exception))
             opener.return_value.open.side_effect = None
             opener.return_value.open.return_value.__enter__.return_value.read.return_value = b'{}'
-            with self.assertRaisesRegex(AgentError, 'Resposta inválida'):
+            with self.assertRaisesRegex(AgentError, 'Invalid response'):
                 client.complete([], [])
 
 

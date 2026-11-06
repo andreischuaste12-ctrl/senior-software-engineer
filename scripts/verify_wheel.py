@@ -1,4 +1,4 @@
-"""Construa e execute o wheel instalado fora do checkout, sem API ou credenciais."""
+"""Build and run the installed wheel outside the checkout without API calls or credentials."""
 
 from pathlib import Path
 import subprocess
@@ -22,7 +22,7 @@ def main() -> None:
                    'assert "# Senior Software Engineer" in instructions(Workspace(".")); '
                    'assert files("sse_skill").joinpath("NOTICE").is_file(); '
                    'assert files("sse_skill").joinpath("references").joinpath("api-currency.md").is_file(); '
-                   'print("Wheel instalado e recursos disponíveis fora do checkout.")')
+                   'print("Installed wheel and resources are available outside the checkout.")')
         subprocess.run([str(python), '-I', '-c', command], cwd=directory, check=True)
         subprocess.run([str(python), '-I', '-m', 'sse_agent.evals', 'list'], cwd=directory, check=True)
 
