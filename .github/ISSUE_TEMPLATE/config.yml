@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Private security report
-    url: https://github.com/andreischuaste12-ctrl/senior-software-engineer/security/advisories/new
+    url: https://github.com/andreischuaste12-ctrl/senior-software-engineer-konvert/security/advisories/new
     about: Report vulnerabilities privately. Do not disclose them in a public issue.

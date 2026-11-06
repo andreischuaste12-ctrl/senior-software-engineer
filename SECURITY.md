@@ -13,7 +13,7 @@ currently maintain older release branches.
 ## Report a vulnerability
 
 Use GitHub's private
-[vulnerability report](https://github.com/andreischuaste12-ctrl/senior-software-engineer/security/advisories/new).
+[vulnerability report](https://github.com/andreischuaste12-ctrl/senior-software-engineer-konvert/security/advisories/new).
 Include the affected version or commit, prerequisites, reproduction steps,
 impact, and a suggested fix when available.
 
