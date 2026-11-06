@@ -1,8 +1,10 @@
 {
   "consulted_on": "2026-11-05",
   "scope": "Point-in-time checks; this does not certify the complete submission.",
-  "original_file": "software-engineering-knowledge-base-v2-submitted.md",
-  "original_sha256": "e09731d10251938f07f8de32ef2c6150c4a825eb23024d95add07e57653d26c1",
+  "original_submitted_sha256": "e09731d10251938f07f8de32ef2c6150c4a825eb23024d95add07e57653d26c1",
+  "english_edition_file": "docs/sources/software-engineering-knowledge-base-v2-submitted.md",
+  "english_edition_sha256": "6356e3924a487a95f4f814be0acd7b311a65ef7d957660eea69c2bbd4ec821a4",
+  "provenance_note": "The original digest identifies the 377-line submitted document. Source-check line references describe that submission. The maintained English edition is identified by its own path and digest.",
   "sources": [
     {
       "id": "go-mod",

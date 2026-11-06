@@ -4,9 +4,11 @@ from collections.abc import Iterator, Sequence
 import hashlib
 import os
 from pathlib import Path, PureWindowsPath
+import re
 import stat
 import subprocess
 import tempfile
+import time
 from typing import Any
 
 from .paths import matches_pattern
@@ -17,6 +19,8 @@ MAX_EDIT_BYTES = 2_000_000       # largest file that can be ranged, searched, or
 MAX_SCANNED_FILES = 10_000
 MAX_LISTED_FILES = 1000
 MAX_SEARCH_RESULTS = 200
+MAX_SEARCH_BYTES = 32_000_000
+MAX_SEARCH_SECONDS = 5.0
 OUTPUT_LIMIT = 16_000
 OUTPUT_HEAD = 2_000
 
@@ -24,14 +28,32 @@ OUTPUT_HEAD = 2_000
 SECRET_DIRS = {'.git', '.aws', '.ssh', '.kube', '.gnupg', '.docker'}
 # Dependencies and caches: never accessible at any depth.
 DEPENDENCY_DIRS = {'.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache',
-                   '.mypy_cache', '.ruff_cache'}
+                   '.mypy_cache', '.ruff_cache', '.next'}
 # Common generated/dependency directory names are hidden only at the workspace root.
 # Nested source packages may legitimately use these domain terms.
-ARTIFACT_DIRS = {'dist', 'build', 'target', 'vendor', '.next', 'coverage'}
+ARTIFACT_DIRS = {'dist', 'build', 'target', 'vendor', 'coverage'}
 ENV_TEMPLATES = ('.env.example', '.env.sample', '.env.template')
 SECRET_FILES = {'credentials', 'credentials.json', 'secrets.json', 'id_rsa', 'id_ed25519',
                 'id_ecdsa', 'id_dsa', '.npmrc', '.netrc', '.pypirc', '.git-credentials',
-                '.htpasswd', 'wp-config.php', 'secrets.yaml', 'secrets.yml'}
+                '.htpasswd', 'wp-config.php', 'secrets.yaml', 'secrets.yml', 'auth.json',
+                '.yarnrc.yml', '.pgpass', '.my.cnf', '.vault-token', 'kubeconfig',
+                'service-account.json', 'application_default_credentials.json',
+                'client_secret.json', 'token.json', '.dockercfg', '.s3cfg', '.boto',
+                '.gitconfig', 'credentials.yml', 'credentials.yaml', 'local_settings.py',
+                'settings.local.php', 'appsettings.production.json'}
+SECRET_RELATIVE_PATHS = {'.config/gh/hosts.yml', '.cargo/credentials.toml',
+                         '.cargo/credentials'}
+EXECUTION_FILENAMES = {'conftest.py', 'setup.py', 'sitecustomize.py', 'noxfile.py',
+                       'makefile', 'package.json', 'composer.json', 'pyproject.toml',
+                       'dockerfile', '.pre-commit-config.yaml', '.gitmodules'}
+EXECUTION_DIRECTORIES = {'.github/workflows', '.vscode', '.devcontainer', '.husky', 'scripts'}
+SENSITIVE_CONTENT = (
+    re.compile(rb'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'),
+    re.compile(rb'(?<![A-Za-z0-9_])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9_])'),
+    re.compile(rb'(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}(?![A-Za-z0-9_])'),
+    re.compile(rb'(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{20,}(?![A-Za-z0-9_])'),
+    re.compile(rb'(?<![A-Za-z0-9_])xox[baprs]-[A-Za-z0-9-]{20,}(?![A-Za-z0-9_])'),
+)
 
 # Environment variables passed to checks (uppercase names; LC_* is also allowed).
 CHECK_ENV_ALLOWLIST = {
@@ -50,8 +72,44 @@ def protected(part: str) -> bool:
         return True
     if lower == '.envrc' or lower == '.env' or lower.startswith('.env.'):
         return lower not in ENV_TEMPLATES
-    return lower.endswith(('.pem', '.key', '.p12', '.pfx', '.jks', '.env', '.tfstate', '.tfvars')) or (
+    if re.fullmatch(r'[^~]{1,6}~[0-9](?:\..*)?', part, re.IGNORECASE):
+        return True  # reject possible Windows 8.3 aliases such as GIT~1
+    return lower.endswith(('.pem', '.key', '.p8', '.ppk', '.p12', '.pfx', '.jks', '.keystore',
+                           '.kdbx', '.env', '.tfstate', '.tfvars', '_history')) or (
         '.tfstate.' in lower or lower.endswith('.tfvars.json'))
+
+
+def protected_path(parts: Sequence[str]) -> bool:
+    relative = '/'.join(parts).casefold()
+    return relative in SECRET_RELATIVE_PATHS or any(protected(part) for part in parts)
+
+
+def execution_surface(relative: str) -> bool:
+    """Return whether writing this path can trigger common automation."""
+    normalized = relative.replace('\\', '/').casefold().strip('/')
+    parts = normalized.split('/')
+    return (parts[-1] in EXECUTION_FILENAMES or
+            any(normalized == directory or normalized.startswith(directory + '/') or
+                f'/{directory}/' in f'/{normalized}/'
+                for directory in EXECUTION_DIRECTORIES) or
+            parts[-1].endswith(('.sh', '.ps1', '.bat', '.cmd')))
+
+
+def contains_sensitive_content(data: bytes) -> bool:
+    return any(pattern.search(data) for pattern in SENSITIVE_CONTENT)
+
+
+def artifact_name(name: str, parent: Path) -> bool:
+    """Match generated root directories using host filesystem case rules."""
+    if name in ARTIFACT_DIRS:
+        return True
+    canonical = name.casefold()
+    if canonical not in ARTIFACT_DIRS:
+        return False
+    try:
+        return (parent / name).samefile(parent / canonical)
+    except OSError:
+        return False
 
 
 def linked(path: Path) -> bool:
@@ -105,11 +163,16 @@ class Workspace:
     def __init__(self, root: str | Path, allow_write: bool = False,
                  checks: dict[str, list[str]] | None = None, timeout: float = 60,
                  pass_env: Sequence[str] = (), deny: Sequence[str] = (),
-                 allow_files: Sequence[str] = ()) -> None:
+                 allow_files: Sequence[str] = (), allow_executable_write: bool = False,
+                 allow_check_after_write: bool = False) -> None:
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise ValueError('The workspace must be a directory.')
+        if self.root == Path(self.root.anchor) or self.root == Path.home().resolve():
+            raise ValueError('Choose a project directory, not a filesystem or home-directory root.')
         self.allow_write = allow_write
+        self.allow_executable_write = allow_executable_write
+        self.allow_check_after_write = allow_check_after_write
         self.checks = checks or {}
         self.timeout = timeout
         self.pass_env = tuple(pass_env)
@@ -136,8 +199,8 @@ class Workspace:
         path = Path(relative.replace('\\', '/'))
         reserved = {'CON', 'PRN', 'AUX', 'NUL', 'CONIN$', 'CONOUT$'} | {
             prefix + number for prefix in ('COM', 'LPT') for number in '123456789¹²³'}
-        if (path.is_absolute() or PureWindowsPath(relative).anchor or
-                any(part == '..' or protected(part) or ':' in part or
+        if (path.is_absolute() or PureWindowsPath(relative).anchor or protected_path(path.parts) or
+                any(part == '..' or ':' in part or
                     part.endswith((' ', '.')) or part.split('.')[0].upper() in reserved
                     for part in path.parts)):
             raise ValueError('Path is outside the allowed scope or is protected.')
@@ -189,7 +252,7 @@ class Workspace:
                 {'path': {'type': 'string'}, 'content': {'type': 'string'},
                  'expected_sha256': {'type': ['string', 'null']}},
                 ['path', 'content', 'expected_sha256']))
-        if self.checks:
+        if self.checks and (not self.allow_write or self.allow_check_after_write):
             definitions.append(schema(
                 'run_check', 'Run a check defined by the operator. Names: ' +
                 ', '.join(self.checks),
@@ -205,12 +268,13 @@ class Workspace:
         if not start.is_dir():
             raise ValueError('Search directory not found.')
         start_relative = start.relative_to(self.root)
-        if start_relative.parts and start_relative.parts[0].lower() in ARTIFACT_DIRS:
+        if start_relative.parts and artifact_name(start_relative.parts[0], self.root):
             raise ValueError('Root artifact directories cannot be enumerated.')
         for base, dirs, files in os.walk(start, followlinks=False):
             at_root = Path(base) == self.root
-            dirs[:] = sorted(d for d in dirs if not protected(d) and
-                             not (at_root and d.lower() in ARTIFACT_DIRS) and
+            dirs[:] = sorted(d for d in dirs if not protected_path(
+                                 (Path(base) / d).relative_to(self.root).parts) and
+                             not (at_root and artifact_name(d, self.root)) and
                              not self.denied((Path(base) / d).relative_to(self.root).as_posix()) and
                              not linked(Path(base) / d))
             for name in sorted(files):
@@ -219,7 +283,14 @@ class Workspace:
                     yield None
                     return
                 relative = (Path(base) / name).relative_to(self.root).as_posix()
-                if (protected(name) or linked(Path(base) / name) or self.denied(relative) or
+                candidate = Path(base) / name
+                try:
+                    info = candidate.lstat()
+                    regular_unlinked = stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                except OSError:
+                    regular_unlinked = False
+                if (not regular_unlinked or protected_path(Path(relative).parts) or linked(candidate) or
+                        self.denied(relative) or
                         not self.allowed_file(relative)):
                     continue
                 yield (Path(base) / name).relative_to(self.root).as_posix()
@@ -242,12 +313,25 @@ class Workspace:
 
     def _load(self, relative: str) -> tuple[Path, bytes]:
         target = self.path(relative)
-        if not target.is_file():
-            raise ValueError('Regular file not found.')
-        with target.open('rb') as stream:
-            data = stream.read(MAX_EDIT_BYTES + 1)
+        try:
+            flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+            descriptor = os.open(target, flags)
+        except OSError:
+            raise ValueError('Regular file not found.') from None
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError('Regular file not found.')
+            with os.fdopen(descriptor, 'rb') as stream:
+                descriptor = -1
+                data = stream.read(MAX_EDIT_BYTES + 1)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
         if len(data) > MAX_EDIT_BYTES:
             raise ValueError(f'File exceeds the {MAX_EDIT_BYTES}-byte limit.')
+        if contains_sensitive_content(data):
+            raise ValueError('File content resembles a credential and cannot be read or edited.')
         return target, data
 
     def read_file(self, path: str, start_line: int | None = None,
@@ -291,8 +375,10 @@ class Workspace:
         if pattern is not None and not isinstance(pattern, str):
             raise ValueError('pattern must be a string.')
         limit = min(integer_argument(max_results, 'max_results'), MAX_SEARCH_RESULTS)
-        needle = query.lower() if ignore_case else query
+        needle = query.casefold() if ignore_case else query
         matches: list[dict[str, Any]] = []
+        scanned_bytes = 0
+        started = time.monotonic()
         start = self.path(directory, directory=True)
         for relative in self._walk(directory):
             if relative is None:
@@ -300,17 +386,24 @@ class Workspace:
             scoped = Path(relative).relative_to(start.relative_to(self.root)).as_posix()
             if not (matches_pattern(relative, pattern) or matches_pattern(scoped, pattern)):
                 continue
+            if scanned_bytes >= MAX_SEARCH_BYTES or time.monotonic() - started >= MAX_SEARCH_SECONDS:
+                return {'matches': matches, 'truncated': True}
             try:
-                with self.path(relative).open('rb') as stream:
-                    data = stream.read(MAX_EDIT_BYTES + 1)
+                _, data = self._load(relative)
+                scanned_bytes += len(data)
                 if len(data) > MAX_EDIT_BYTES or b'\x00' in data:
                     continue
                 text = data.decode('utf-8')
             except (OSError, ValueError):
                 continue  # unreadable, binary, or outside policy: ignore silently
             for number, line in enumerate(text.split('\n'), 1):
-                if needle in (line.lower() if ignore_case else line):
-                    position = (line.lower() if ignore_case else line).find(needle)
+                compared = line.casefold() if ignore_case else line
+                if needle in compared:
+                    if ignore_case:
+                        found = re.search(re.escape(query), line, re.IGNORECASE)
+                        position = found.start() if found else 0
+                    else:
+                        position = line.find(needle)
                     begin = max(0, position - 60)
                     matches.append({'path': relative, 'line': number,
                                     'text': line.rstrip('\r')[begin:begin + 200]})
@@ -323,6 +416,11 @@ class Workspace:
     def _require_write(self) -> None:
         if not self.allow_write:
             raise ValueError('Writing is not authorized; use --allow-write.')
+
+    def _require_write_path(self, relative: str) -> None:
+        if execution_surface(relative) and not self.allow_executable_write:
+            raise ValueError('Writing automation or executable surfaces requires '
+                             '--allow-executable-write.')
 
     def _replace_existing(self, relative: str, target: Path, data: bytes,
                           expected_sha256: str) -> None:
@@ -348,6 +446,7 @@ class Workspace:
     def write_file(self, path: str, content: str,
                    expected_sha256: str | None) -> dict[str, Any]:
         self._require_write()
+        self._require_write_path(path)
         if not isinstance(content, str):
             raise ValueError('content must be a string.')
         data = content.encode('utf-8')
@@ -364,6 +463,10 @@ class Workspace:
                 data = data.replace(b'\n', b'\r\n')  # preserve the file's line endings
                 if len(data) > MAX_FILE_BYTES:
                     raise ValueError(f'Content exceeds the {MAX_FILE_BYTES}-byte limit after CRLF conversion.')
+            if current.startswith(b'\xef\xbb\xbf') and not data.startswith(b'\xef\xbb\xbf'):
+                data = b'\xef\xbb\xbf' + data
+                if len(data) > MAX_FILE_BYTES:
+                    raise ValueError(f'Content exceeds the {MAX_FILE_BYTES}-byte limit after BOM preservation.')
             self._replace_existing(path, target, data, expected_sha256)
         else:
             if expected_sha256 is not None:
@@ -375,6 +478,7 @@ class Workspace:
     def replace_in_file(self, path: str, old: str, new: str, expected_sha256: str,
                         replace_all: bool = False) -> dict[str, Any]:
         self._require_write()
+        self._require_write_path(path)
         if not isinstance(replace_all, bool):
             raise ValueError('replace_all must be a boolean.')
         if not isinstance(old, str) or not old or not isinstance(new, str):
@@ -449,7 +553,9 @@ class Workspace:
                 raise ValueError('Arguments must be a JSON object.')
             result: dict[str, Any] = getattr(self, name)(**arguments)
             return result
-        except (OSError, ValueError, TypeError) as error:
+        except (ValueError, TypeError) as error:
             return {'error': str(error)}
+        except OSError:
+            return {'error': 'The file operation failed.'}
         except Exception as error:  # an unexpected tool failure must not crash the paid task
             return {'error': f'Unexpected tool failure ({type(error).__name__}).'}

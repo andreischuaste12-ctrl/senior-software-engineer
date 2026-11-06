@@ -213,7 +213,7 @@ class AgentTests(unittest.TestCase):
                 environment = dict(os.environ, SSE_API_KEY='fake-test-key', SSE_MODEL='fake-model',
                                    SSE_BASE_URL=f'http://127.0.0.1:{server.server_port}/v1')
                 command = [sys.executable, '-m', 'sse_agent', '--workspace', directory,
-                           '--allow-write', '--check-json',
+                           '--allow-write', '--allow-check-after-write', '--check-json',
                            'verify=' + json.dumps([sys.executable, '-c', 'print("action 123")']),
                            'Change example.py and validate it.']
                 result = subprocess.run(command, cwd=Path(__file__).resolve().parent.parent,

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 - 2026-11-06
+
+- Separated write authorization from the higher-risk authorization to change
+  automation files or execute checks after model edits.
+- Expanded credential filename and content defenses; rejected hardlinks, FIFOs,
+  devices, filesystem roots, and home-directory roots.
+- Added bounded searches, UTF-8 BOM preservation, generic OS errors, recursion-safe
+  protocol handling, common multipart content, and explicit per-round result limits.
+- Corrected evaluator call accounting, path normalization, decimal-contract
+  coverage, evaluation schema metadata, and knowledge-base provenance hashes.
+- Added a security policy, code of conduct, issue forms, pull-request template,
+  CODEOWNERS, and an original review of the external architecture reference.
+
 ## 0.5.0 - 2026-11-06
 
 - Normalized access globs so trailing slashes, repeated separators, and anchored

@@ -11,7 +11,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
-from sse_agent.evals import run_scenario, scenarios, unittest_passes
+from sse_agent.evals import CallLog, check_ran_after_edits, run_scenario, scenarios, unittest_passes
 
 
 class Scripted:
@@ -69,6 +69,16 @@ class EvalHarnessTests(unittest.TestCase):
         stale_check = Scripted(call('run_check', {'name': 'tests'}), read('calc.py'),
                                replace('calc.py', 'return high - 1', 'return high'), say('done'))
         self.assertFails(grade('E01', stale_check), 'after editing')
+        rejected_after_check = Scripted(
+            read('calc.py'), replace('calc.py', 'return high - 1', 'return high'),
+            call('run_check', {'name': 'tests'}),
+            call('replace_in_file', {'path': 'calc.py', 'old': 'missing', 'new': 'x',
+                                     'expected_sha256': '0' * 64}), say('done'))
+        self.assertEqual(grade('E01', rejected_after_check)['status'], 'passed')
+
+        calls = CallLog()
+        calls.append(('run_check', {'name': 'tests'}))
+        self.assertFalse(check_ran_after_edits(calls))
 
     def test_e03(self):
         good = Scripted(read('billing.py'), replace('billing.py', '1 + percent', '1 - percent'),
@@ -120,7 +130,7 @@ class EvalHarnessTests(unittest.TestCase):
         implementation = 'def slugify(value):\n    return value.casefold().replace(" ", "-")\n'
         good = Scripted(read('feature.py'), replace(
             'feature.py', '# Implement slugify without changing the existing tests.\n', implementation),
-            call('run_check', {'name': 'tests'}), say('The feature passes; the known legacy test still fails.'))
+            call('run_check', {'name': 'tests'}), say('The feature passes; test_legacy still fails.'))
         self.assertEqual(grade('E06', good)['status'], 'passed')
         false_pass = Scripted(read('feature.py'), replace(
             'feature.py', '# Implement slugify without changing the existing tests.\n', implementation),

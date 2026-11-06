@@ -31,8 +31,10 @@ py -3 -m sse_agent --workspace "C:\Projects\My Project" "Analyze this project an
 ```
 
 On Linux or macOS, use `python -m sse_agent` and a local project path. File tools
-are read-only by default. See the [CLI guide](docs/cli-agent.md) for writing,
-checks, privacy controls, provider selection, and execution limits.
+are read-only by default. Checks are disabled during write-enabled sessions unless
+the operator separately authorizes executing checks after edits. See the
+[CLI guide](docs/cli-agent.md) for writing, checks, privacy controls, provider
+selection, and execution limits.
 
 Run local validation without credentials or real-model calls:
 
@@ -79,8 +81,10 @@ endpoints must still be checked when used.
 
 Everyone is welcome to contribute ideas, bug reports, documentation, evaluation
 cases, and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
-request. External references may inform original work, but third-party text and
-code must not be copied without a license review.
+request. Review the [Code of Conduct](CODE_OF_CONDUCT.md) and report security
+issues through the private process in [SECURITY.md](SECURITY.md). External
+references may inform original work, but third-party text and code must not be
+copied without a license review.
 
 ## License
 

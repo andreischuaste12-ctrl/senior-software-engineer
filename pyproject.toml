@@ -13,6 +13,9 @@ license-files = ["LICENSE", "NOTICE", "skills/senior-software-engineer/LICENSE",
 authors = [{ name = "Andrei Schuaste" }]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["ruff==0.17.4", "mypy==2.4.1"]
+
 [project.scripts]
 sse-agent = "sse_agent.__main__:main"
 

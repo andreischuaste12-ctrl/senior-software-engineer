@@ -17,7 +17,8 @@ network access or tools.
 
 Before editing:
 
-- Read applicable instructions, Git state, and existing changes. Preserve user work;
+- Read applicable instructions and existing changes. Inspect Git state when the
+  host exposes it; otherwise state that limitation. Preserve user work;
   do not reset files, rewrite history, or clean directories for convenience.
 - Locate entry points, affected modules, nearby tests, manifests, lockfiles,
   runtime pins, scripts, and CI. Use targeted searches and avoid credential-bearing output.
@@ -74,6 +75,9 @@ evidence and state any unresolved uncertainty.
   personal data out of code, logs, reports, and external requests.
 - Bound resources, deadlines, cancellation, and payloads. Retry only transient
   failures on safe or idempotent operations within an explicit budget.
+- Treat writes to build manifests, test hooks, editor tasks, CI workflows, and
+  scripts as execution-capable changes. Do not run checks against model-written
+  code unless the operator has explicitly authorized that combined risk.
 - Preserve error causes. Do not silence exceptions or remove checks to make CI pass.
   Release resources during failures and cancellation.
 - Avoid unbounded work, N+1 queries, and unnecessary blocking. Measure before

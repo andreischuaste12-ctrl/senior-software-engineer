@@ -1,5 +1,9 @@
 # Contributing guidelines
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Security
+reports follow [SECURITY.md](SECURITY.md) and must not be disclosed in public
+issues before a fix is available.
+
 ## How to participate
 
 Contributors of every experience level are welcome. Contributions may include
@@ -43,17 +47,14 @@ does not demonstrate effectiveness until it is implemented and validated.
 
 - Source: <https://github.com/mattpocock/skills>, skill
   `improve-codebase-architecture`.
-- Status on November 5, 2026: **analysis pending**. The GitHub request failed
-  because the environment proxy could not be reached.
-- Revision, license, and notices: not verified.
-- Concepts studied: none; the content has not been examined.
-- Expected contribution: determine whether the approach contains concepts useful
-  for a future original architecture-analysis capability.
-- Next step: when access is available, read the documentation, skill, and license
-  notices without installing its content. Record the revision and an original
-  summary of useful concepts and possible applications.
+- Status on November 6, 2026: documentation, skill instructions, and license
+  reviewed at commit `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` without installing them.
+- License observed: MIT, copyright Matt Pocock (2026). No source material was
+  incorporated into this project.
+- Original synthesis and proposed applications:
+  [architecture reference review](docs/reference-reviews/improve-codebase-architecture.md).
 - Proposed validation: define representative cases and acceptance criteria before
-  implementing any original approach. No validation of the reference has occurred.
+  implementing any original approach. No real-model validation has occurred.
 
 ## Review and validation
 

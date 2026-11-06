@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a focused capability or project improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user need and current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the smallest useful behavior, including Windows considerations.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: How should the project prove that the change works?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Contribution fit
+      options:
+        - label: I reviewed the README and CONTRIBUTING.md.
+          required: true
+        - label: I will identify third-party sources and licenses before proposing reuse.
+          required: true

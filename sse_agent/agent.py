@@ -14,6 +14,7 @@ MAX_PAYLOAD = 250_000
 RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRY_DELAY = 30.0
 CONTEXT_RESERVE = 8_000
+MAX_ROUND_TOOL_RESULT_BYTES = 96_000
 DEFAULT_BASE_URL = 'http://127.0.0.1:1234/v1'
 # Fields from old tool results that survive context compaction.
 KEEP_KEYS = ('path', 'sha256', 'written', 'replacements', 'name', 'exit_code',
@@ -111,11 +112,29 @@ class Client:
             message: dict[str, Any] = choice['message']
             if message.get('role') != 'assistant':
                 raise ValueError('invalid role')
+            message['content'] = normalize_content(message.get('content'))
             if choice.get('finish_reason') not in {'stop', 'tool_calls'}:
                 raise AgentError('The API truncated the response; the task is incomplete.')
             return message
-        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError, RecursionError):
             raise AgentError('Invalid response for the tool-enabled Chat Completions protocol.') from None
+
+
+def normalize_content(content: Any) -> str | None:
+    """Accept string content and the common list-of-text-parts representation."""
+    if content is None or isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if not isinstance(part, dict) or part.get('type') not in {'text', 'output_text'}:
+                raise ValueError('invalid content part')
+            text = part.get('text')
+            if not isinstance(text, str):
+                raise ValueError('invalid content text')
+            parts.append(text)
+        return ''.join(parts)
+    raise ValueError('invalid content')
 
 
 def instructions(workspace: Any) -> str:
@@ -130,6 +149,8 @@ def instructions(workspace: Any) -> str:
         _, separator, text = text[4:].partition('\n---\n')
         if not separator:
             raise AgentError('Invalid skill frontmatter; reinstall the package.')
+    checks_enabled = not workspace.allow_write or workspace.allow_check_after_write
+    available_checks = ', '.join(workspace.checks) if checks_enabled else 'none'
     policy = (
         'You are this project\'s agent. Answer in the user\'s language. '
         'Use tools to gather evidence; never invent reads, edits, or test results. '
@@ -148,7 +169,7 @@ def instructions(workspace: Any) -> str:
         'do not try to open those package-relative paths with workspace file tools. '
         'Explain limitations and checks that were not run in the final response. '
         f'Writing authorized: {workspace.allow_write}. '
-        f'Available checks: {", ".join(workspace.checks) or "none"}.\n\n'
+        f'Available checks: {available_checks}.\n\n'
     )
     return policy + text
 
@@ -196,18 +217,9 @@ def shrink_assistant_message(message: dict[str, Any]) -> bool:
 def compact_history(messages: list[dict[str, Any]], tools: list[dict[str, Any]],
                     budget: int, protected_from: int) -> None:
     """Trim results and edits before the current round, oldest first, until they fit.
-    Preserve ordering and tool_call_id pairing."""
+    Preserve the current round, ordering, and tool_call_id pairing."""
     for role, shrink in (('tool', shrink_tool_message), ('assistant', shrink_assistant_message)):
         for message in messages[:protected_from]:
-            if payload_size(messages, tools) <= budget:
-                return
-            if message.get('role') == role:
-                shrink(message)
-    # If one tool round alone exceeds the budget, retain metadata and call/result
-    # pairing while compacting its oldest large values. Otherwise a few valid reads
-    # can make the next model request impossible.
-    for role, shrink in (('tool', shrink_tool_message), ('assistant', shrink_assistant_message)):
-        for message in messages[protected_from:]:
             if payload_size(messages, tools) <= budget:
                 return
             if message.get('role') == role:
@@ -228,6 +240,10 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
         compact_history(messages, tools, max_payload - CONTEXT_RESERVE,
                         assistant_turns[-1] if assistant_turns else len(messages))
         message = client.complete(messages, tools)
+        try:
+            message['content'] = normalize_content(message.get('content'))
+        except (TypeError, ValueError, RecursionError):
+            raise AgentError('Invalid assistant content format.') from None
         calls = message.get('tool_calls') or []
         content = message.get('content')
         if not isinstance(calls, list) or len(calls) > 128:
@@ -238,29 +254,48 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
             return content
         # Validate the entire round before executing any local effect.
         parsed = []
+        normalized_calls = []
         ids = set()
         for call in calls:
             try:
                 call_id = call['id']
                 function = call['function']
                 name = function['name']
-                if (call['type'] != 'function' or not isinstance(call_id, str) or
-                        not isinstance(name, str) or call_id in ids):
+                if (call.get('type', 'function') != 'function' or not isinstance(call_id, str) or
+                        not call_id or not isinstance(name, str)):
                     raise ValueError('Invalid call')
+                original_id = call_id
+                suffix = 2
+                while call_id in ids:
+                    call_id = f'{original_id}-{suffix}'
+                    suffix += 1
                 ids.add(call_id)
                 arguments = json.loads(function['arguments'])
                 if not isinstance(arguments, dict):
                     raise ValueError('Invalid arguments')
+                canonical_arguments = json.dumps(arguments, ensure_ascii=False)
                 parsed.append((call_id, name, arguments))
-            except (KeyError, TypeError, ValueError):
+                normalized_calls.append({'id': call_id, 'type': 'function', 'function': {
+                    'name': name, 'arguments': canonical_arguments}})
+            except (KeyError, TypeError, ValueError, RecursionError):
                 raise AgentError('Malformed tool call; the round was not executed.') from None
-        messages.append({'role': 'assistant', 'content': content, 'tool_calls': calls})
+        messages.append({'role': 'assistant', 'content': content, 'tool_calls': normalized_calls})
+        result_bytes = 0
         for index, (call_id, name, arguments) in enumerate(parsed):
             if notify and index < 8:
                 notify(name)
             result = (workspace.execute(name, arguments) if index < 8 else
                       {'error': 'The limit of 8 executed tools was reached for this round. '
                                 'Request this operation in another round; it was not executed.'})
-            messages.append({'role': 'tool', 'tool_call_id': call_id,
-                             'content': json.dumps(result, ensure_ascii=False)})
+            try:
+                encoded = json.dumps(result, ensure_ascii=False)
+            except (TypeError, ValueError, RecursionError):
+                encoded = json.dumps({'error': 'The tool returned an invalid result.'})
+            size = len(encoded.encode('utf-8'))
+            if result_bytes + size > MAX_ROUND_TOOL_RESULT_BYTES:
+                encoded = json.dumps({'error': 'The per-round tool-result limit was reached. '
+                                      'Request fewer files or smaller line ranges.'})
+                size = len(encoded)
+            result_bytes += size
+            messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': encoded})
     raise AgentError('Round limit reached; the task is incomplete. Review local changes.')

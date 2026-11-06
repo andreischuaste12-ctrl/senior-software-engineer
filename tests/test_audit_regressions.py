@@ -57,6 +57,8 @@ class AuditRegressions(unittest.TestCase):
         self.assertFalse(matches_pattern('src/nested/a.ts', 'src/*.ts'))
         self.assertFalse(matches_pattern('other/a.ts', 'src/**/*.ts'))
         self.assertTrue(matches_pattern('private/secret.txt', 'private/'))
+        self.assertTrue(matches_pattern('nested/private/secret.txt', 'private/'))
+        self.assertFalse(matches_pattern('nested/private/secret.txt', './private/'))
         self.assertTrue(matches_pattern('private/secret.txt', 'private\\'))
         self.assertTrue(matches_pattern('src/secret.py', 'src//*.py'))
         self.assertFalse(matches_pattern('nested/src', 'src/.'))

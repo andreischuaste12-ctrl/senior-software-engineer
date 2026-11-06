@@ -1,4 +1,4 @@
-# Terminal AI agent — 0.5.0
+# Terminal AI agent — 0.6.0
 
 Python 3.11 or newer is required on Windows, Linux, or macOS. The wheel has no
 runtime dependencies and includes the skill resources. Both `pip install .` and
@@ -58,45 +58,54 @@ secret. Review the provider's terms and the selected data before enabling transf
   Access filters are case-insensitive for consistent Windows and POSIX protection.
 - Known credential files, private-key formats, Terraform state/variable files,
   and `.git`, `.aws`, `.ssh`, `.kube`, `.gnupg`, and `.docker` are blocked.
+- Recognizable private-key and common provider-token signatures cause the entire
+  file to be refused. This is defense in depth, not complete secret detection.
 - `.env.example`, `.env.sample`, and `.env.template` are readable; verify that
   templates contain no real secrets.
-- `node_modules`, virtual environments, and tool caches are always blocked.
-  Root-level `build`, `dist`, `target`, `vendor`, `.next`, and `coverage`
-  are omitted from recursive listing. Nested directories with those names remain
-  accessible because they may represent source-domain concepts. Root artifact
+- `node_modules`, `.next`, virtual environments, and tool caches are always blocked.
+  Root-level `build`, `dist`, `target`, `vendor`, and `coverage` are omitted from
+  recursive listing. Nested directories with those names remain accessible because
+  they may represent source-domain concepts. On case-sensitive hosts, the artifact
+  names are case-sensitive. Root artifact
   directories cannot be enumerated directly, although an explicitly named file
   remains readable unless denied by the operator.
-- Symlinks, junctions/reparse points, parent traversal, NTFS streams, and reserved
-  Windows device names are rejected.
+- Symlinks, hardlinks, junctions/reparse points, FIFOs, device files, parent
+  traversal, NTFS streams, and reserved Windows device names are rejected.
 
-These rules do not sandbox checks, detect every hardlink race, or scan source text
-for all secrets. Avoid concurrent modifications and use a narrow allowlist.
+These rules do not sandbox checks or scan source text for all secrets. Avoid
+concurrent modifications and use a narrow allowlist.
 
 ## Tools
 
 | Tool | Contract |
 | --- | --- |
 | `list_files` | Optional `pattern` and `directory`; patterns may be workspace-relative or directory-relative; up to 1,000 results and 10,000 scanned files. |
-| `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, and a 200-result ceiling. |
+| `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, a 200-result ceiling, a 32 MB scan budget, and a five-second scan budget. |
 | `read_file` | UTF-8, up to 64,000 response bytes; line ranges for files up to 2 MB; full-file SHA-256. |
-| `replace_in_file` | Requires `--allow-write`, the read hash, and a unique old string unless `replace_all`; preserves CRLF. |
-| `write_file` | Requires `--allow-write`; creates under an existing parent or replaces with a valid hash. |
-| `run_check` | Runs only an operator-defined argument array; returns exit status, timeout, and bounded output. |
+| `replace_in_file` | Requires `--allow-write`, the read hash, and a unique old string unless `replace_all`; preserves CRLF and an existing UTF-8 BOM. |
+| `write_file` | Requires `--allow-write`; creates under an existing parent or replaces with a valid hash. Common execution surfaces require `--allow-executable-write`. |
+| `run_check` | Runs only an operator-defined argument array; returns exit status, timeout, and bounded output. Hidden during write sessions unless `--allow-check-after-write` is present. |
 
 A response may request at most 128 tool calls. The first eight are executed
 sequentially; excess calls receive paired errors and can be requested later. Each
-round is fully validated before local effects begin.
+round is fully validated before local effects begin. Tool results have a 96 KB
+per-round budget; excess results receive explicit errors and must be requested in
+smaller ranges.
 
 ## Checks and process limits
 
 ```powershell
-py -3 -m sse_agent --workspace "C:\Projects\My Project" --allow-write --check "tests=py -3 -m unittest discover -s tests -v" "Fix the bug and validate it"
+py -3 -m sse_agent --workspace "C:\Projects\My Project" --allow-write --allow-check-after-write --check "tests=py -3 -m unittest discover -s tests -v" "Fix the bug and validate it"
 ```
 
 `--check` uses native Windows parsing or POSIX `shlex`, without a free shell.
 `--check-json NAME=JSON_ARRAY` is available for exact programmatic arguments.
 Checks run with their normal OS permissions and can write even without
-`--allow-write`. They are not sandboxed. A minimal environment is passed;
+`--allow-write`. They are not sandboxed. When writes are enabled, checks are hidden
+unless `--allow-check-after-write` explicitly authorizes executing code after
+model edits. Even ordinary source files can become executable through a configured
+test or build command. Common automation files and scripts also require
+`--allow-executable-write` before the file tools can change them. A minimal environment is passed;
 `--check-env NAME` opts into another variable, but API keys are never forwarded.
 
 Timeout termination uses a POSIX process group or `taskkill /T /F` on Windows.

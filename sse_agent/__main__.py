@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--version', action='version', version=f'sse_agent {__version__}')
     parser.add_argument('--workspace', default='.', help='Authorized repository (default: current directory).')
     parser.add_argument('--allow-write', action='store_true', help='Allow creating or replacing text files.')
+    parser.add_argument('--allow-executable-write', action='store_true',
+                        help='Allow writes to automation and executable surfaces. Requires --allow-write.')
+    parser.add_argument('--allow-check-after-write', action='store_true',
+                        help='Allow checks to execute after model writes. Requires --allow-write and '
+                             'trust in the configured checks and edited code.')
     parser.add_argument('--allow-remote', action='store_true',
                         help='Allow sending content to the configured external API.')
     parser.add_argument('--deny', action='append', default=[], metavar='GLOB', help='Deny paths; repeatable.')
@@ -72,15 +77,20 @@ def main(argv: list[str] | None = None) -> int:
         if not args.task.strip():
             raise AgentError('Provide a non-empty task.')
         checks = parse_checks(args.check, args.check_json)
+        if (args.allow_executable_write or args.allow_check_after_write) and not args.allow_write:
+            raise AgentError('The write-risk options require --allow-write.')
         workspace = Workspace(args.workspace, args.allow_write, checks, args.timeout,
-                              pass_env=args.check_env, deny=args.deny, allow_files=args.allow_file)
+                              pass_env=args.check_env, deny=args.deny, allow_files=args.allow_file,
+                              allow_executable_write=args.allow_executable_write,
+                              allow_check_after_write=args.allow_check_after_write)
         client = Client(os.environ.get('SSE_API_KEY') or os.environ.get('OPENAI_API_KEY'),
                         os.environ.get('SSE_MODEL'),
                         os.environ.get('SSE_BASE_URL', DEFAULT_BASE_URL),
                         args.api_timeout, args.max_context_bytes, retries=args.api_retries,
                         allow_remote=args.allow_remote)
         print('Read files and the task will be sent to the configured endpoint. '
-              'Authorized checks execute local code.', file=sys.stderr)
+              'Authorized checks execute local code; during write sessions they are disabled '
+              'unless --allow-check-after-write is set.', file=sys.stderr)
         result = run(client, workspace, args.task, args.max_steps,
                      notify=lambda name: print(f'Tool: {name}', file=sys.stderr))
         print(result)

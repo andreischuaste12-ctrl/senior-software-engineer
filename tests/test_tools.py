@@ -30,22 +30,35 @@ class ToolsTestCase(unittest.TestCase):
 
 class PathPolicyTests(ToolsTestCase):
     def test_nested_artifact_names_are_readable_and_listed(self):
-        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+        for name in ('build', 'target', 'dist', 'vendor', 'coverage'):
             self.write(f'src/{name}/module.py', 'x = 1\n')
         files = self.workspace.list_files()['files']
-        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+        for name in ('build', 'target', 'dist', 'vendor', 'coverage'):
             self.assertIn(f'src/{name}/module.py', files)
             self.assertEqual(self.workspace.read_file(f'src/{name}/module.py')['content'], 'x = 1\n')
+        self.write('packages/web/.next/server.js', 'generated')
+        self.assertNotIn('packages/web/.next/server.js', self.workspace.list_files()['files'])
+        with self.assertRaises(ValueError):
+            self.workspace.read_file('packages/web/.next/server.js')
 
     def test_root_artifact_directories_cannot_be_enumerated_directly(self):
-        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+        for name in ('build', 'target', 'dist', 'vendor', 'coverage'):
             self.write(f'{name}/out.js', 'compiled')
         self.write('app.py', 'x')
         self.assertEqual(self.workspace.list_files()['files'], ['app.py'])
-        for name in ('build', 'target', 'dist', 'vendor', '.next', 'coverage'):
+        for name in ('build', 'target', 'dist', 'vendor', 'coverage'):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.workspace.list_files(directory=name)
             self.assertEqual(self.workspace.read_file(f'{name}/out.js')['content'], 'compiled')
+
+    def test_root_artifact_names_follow_filesystem_case_rules(self):
+        self.write('Build/source.py', 'x')
+        try:
+            case_insensitive = (self.root / 'Build').samefile(self.root / 'build')
+        except OSError:
+            case_insensitive = False
+        assertion = self.assertNotIn if case_insensitive else self.assertIn
+        assertion('Build/source.py', self.workspace.list_files()['files'])
 
     def test_env_lookalikes_and_templates_are_readable_but_secrets_are_not(self):
         for name in ('.environment.md', '.env.example', '.env.sample', '.env.template'):
@@ -62,6 +75,36 @@ class PathPolicyTests(ToolsTestCase):
             self.write(name, 'x')
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.workspace.read_file(name)
+        self.write('GIT~1/config', 'x')
+        with self.assertRaises(ValueError):
+            self.workspace.read_file('GIT~1/config')
+
+    def test_filesystem_and_home_roots_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'project directory'):
+            Workspace(Path(self.root.anchor))
+        with self.assertRaisesRegex(ValueError, 'project directory'):
+            Workspace(Path.home())
+
+    def test_common_credential_names_and_secret_content_are_blocked(self):
+        names = ('auth.json', '.config/gh/hosts.yml', '.cargo/credentials.toml', '.pgpass',
+                 '.my.cnf', '.vault-token', 'service-account.json', 'client_secret.json',
+                 'token.json', 'terminal_history', 'private.ppk', 'store.kdbx')
+        for name in names:
+            self.write(name, 'synthetic')
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.workspace.read_file(name)
+        self.write('ordinary.txt', 'ghp_' + 'A' * 32)
+        with self.assertRaisesRegex(ValueError, 'resembles a credential'):
+            self.workspace.read_file('ordinary.txt')
+
+    @unittest.skipUnless(hasattr(os, 'link'), 'Hardlinks are unavailable.')
+    def test_hardlinked_files_are_not_read_or_listed(self):
+        outside = self.write('source.txt', 'outside')
+        linked = self.root / 'linked.txt'
+        os.link(outside, linked)
+        with self.assertRaises(ValueError):
+            self.workspace.read_file('linked.txt')
+        self.assertNotIn('linked.txt', self.workspace.list_files()['files'])
 
 
 class ReadAndSearchTests(ToolsTestCase):
@@ -127,6 +170,22 @@ class ReadAndSearchTests(ToolsTestCase):
             with self.assertRaises(ValueError):
                 self.workspace.search_text(bad)
 
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'FIFO files are POSIX-specific.')
+    def test_search_ignores_fifo_without_opening_it(self):
+        os.mkfifo(self.root / 'pipe')
+        self.write('regular.txt', 'needle')
+        self.assertEqual(self.workspace.search_text('needle')['matches'][0]['path'], 'regular.txt')
+        self.assertNotIn('pipe', self.workspace.list_files()['files'])
+
+    def test_search_enforces_result_and_byte_budgets(self):
+        for index in range(205):
+            self.write(f'f{index:03}.txt', 'needle\n')
+        result = self.workspace.search_text('needle', max_results=10_000)
+        self.assertEqual(len(result['matches']), 200)
+        self.assertTrue(result['truncated'])
+        with patch('sse_agent.tools.MAX_SEARCH_BYTES', 1):
+            self.assertTrue(self.workspace.search_text('needle')['truncated'])
+
 
 class EditTests(ToolsTestCase):
     def test_expansion_is_rejected_before_large_allocation(self):
@@ -184,6 +243,31 @@ class EditTests(ToolsTestCase):
         self.assertEqual(result['replacements'], 2)
         self.assertEqual((self.root / 'a.py').read_text(), 'y\ny\n')
 
+    def test_replace_rechecks_hash_immediately_before_atomic_write(self):
+        target = self.write('race.txt', 'old')
+        digest = self.workspace.read_file('race.txt')['sha256']
+        original_load = self.workspace._load
+        calls = 0
+
+        def raced_load(path):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                target.write_text('concurrent', encoding='utf-8')
+            return original_load(path)
+
+        with patch.object(self.workspace, '_load', side_effect=raced_load), \
+                self.assertRaisesRegex(ValueError, 'during the write'):
+            self.workspace.replace_in_file('race.txt', 'old', 'new', digest)
+        self.assertEqual(target.read_text(encoding='utf-8'), 'concurrent')
+
+    def test_replace_all_requires_a_boolean(self):
+        self.write('a.py', 'x\n')
+        digest = self.workspace.read_file('a.py')['sha256']
+        for value in (1, 'true', None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'boolean'):
+                self.workspace.replace_in_file('a.py', 'x', 'y', digest, replace_all=value)
+
     def test_replace_in_file_preserves_crlf_and_mode(self):
         target = self.write('a.txt', b'one\r\ntwo\r\nthree\r\n')
         if os.name != 'nt':
@@ -206,6 +290,24 @@ class EditTests(ToolsTestCase):
         digest = self.workspace.read_file('a.txt')['sha256']
         self.workspace.write_file('a.txt', 'uno\ndos\n', digest)
         self.assertEqual(target.read_bytes(), b'uno\r\ndos\r\n')
+
+    def test_write_file_preserves_utf8_bom(self):
+        target = self.write('windows.ps1.txt', b'\xef\xbb\xbfWrite-Host "old"\r\n')
+        digest = self.workspace.read_file('windows.ps1.txt')['sha256']
+        self.workspace.write_file('windows.ps1.txt', 'Write-Host "new"\n', digest)
+        self.assertEqual(target.read_bytes(), b'\xef\xbb\xbfWrite-Host "new"\r\n')
+
+    def test_execution_surfaces_require_separate_authorization(self):
+        for name in ('conftest.py', 'Makefile', '.github/workflows/ci.yml',
+                     '.vscode/tasks.json', 'scripts/build.ps1'):
+            target = self.root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            result = self.workspace.execute('write_file', {'path': name, 'content': 'x',
+                                                            'expected_sha256': None})
+            self.assertIn('allow-executable-write', result['error'])
+            self.assertFalse(target.exists())
+        opted_in = Workspace(self.root, allow_write=True, allow_executable_write=True)
+        self.assertTrue(opted_in.write_file('conftest.py', 'x', None)['written'])
 
     def test_write_file_rejects_content_that_exceeds_limit_after_crlf_conversion(self):
         target = self.write('a.txt', b'one\r\n')
@@ -232,8 +334,22 @@ class EditTests(ToolsTestCase):
         self.assertNotIn('boom', result['error'])
         self.assertIn('error', self.workspace.execute('read_file', {'unexpected': 1}))
 
+    def test_os_errors_do_not_disclose_host_paths(self):
+        with patch.object(Workspace, 'list_files', side_effect=OSError('/private/user/path')):
+            result = self.workspace.execute('list_files', {})
+        self.assertEqual(result, {'error': 'The file operation failed.'})
+
 
 class CheckTests(ToolsTestCase):
+    def test_checks_are_hidden_during_writes_without_separate_authorization(self):
+        command = [sys.executable, '-c', 'print("ok")']
+        blocked = Workspace(self.root, allow_write=True, checks={'tests': command})
+        self.assertNotIn('run_check', {item['function']['name'] for item in blocked.definitions()})
+        self.assertIn('error', blocked.execute('run_check', {'name': 'tests'}))
+        allowed = Workspace(self.root, allow_write=True, checks={'tests': command},
+                            allow_check_after_write=True)
+        self.assertIn('run_check', {item['function']['name'] for item in allowed.definitions()})
+
     def test_output_keeps_the_tail_where_failures_usually_are(self):
         code = 'print("A" * 20000); print("FAIL: assertion at the end")'
         workspace = Workspace(self.root, checks={'noisy': [sys.executable, '-c', code]})

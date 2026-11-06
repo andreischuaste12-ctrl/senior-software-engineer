@@ -16,6 +16,11 @@ def matches_pattern(relative: str, pattern: str | None) -> bool:
         return False
     if directory_pattern:
         tokens.append('**')
+        # A trailing slash follows gitignore-style directory semantics unless
+        # the operator explicitly anchors it with ./ or /.  Therefore dir/
+        # protects both dir/... and nested/dir/....
+        if not anchored:
+            tokens.insert(0, '**')
     if len(tokens) == 1 and not anchored and '/' not in normalized.rstrip('/'):
         return fnmatchcase(parts[-1], tokens[0])
 

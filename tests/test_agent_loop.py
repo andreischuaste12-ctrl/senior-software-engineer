@@ -137,7 +137,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(len(sizes), 5)
         self.assertLessEqual(max(sizes), Reader.max_payload)
 
-    def test_large_results_from_one_round_are_compacted(self):
+    def test_large_results_from_one_round_return_explicit_limit_errors(self):
         with tempfile.TemporaryDirectory() as directory:
             sample = "x = 'action λ'\n" * 3500
             for index in range(4):
@@ -145,7 +145,7 @@ class ContextTests(unittest.TestCase):
                     stream.write(sample)
             workspace = Workspace(directory)
             sizes = []
-            compacted = []
+            limited = []
 
             class Reader:
                 max_payload = 250_000
@@ -159,14 +159,66 @@ class ContextTests(unittest.TestCase):
                             {'id': str(index), 'type': 'function', 'function': {
                                 'name': 'read_file', 'arguments': json.dumps({'path': f'f{index}.py'})}}
                             for index in range(4)]}
-                    compacted.extend(json.loads(message['content']) for message in messages
-                                     if message['role'] == 'tool' and 'omitted' in message['content'])
+                    limited.extend(json.loads(message['content']) for message in messages
+                                   if message['role'] == 'tool' and 'per-round' in message['content'])
                     return {'role': 'assistant', 'content': 'done'}
 
             self.assertEqual(run(Reader(), workspace, 'read all four files'), 'done')
         self.assertEqual(len(sizes), 2)
         self.assertLessEqual(max(sizes), Reader.max_payload)
-        self.assertTrue(compacted)
+        self.assertTrue(limited)
+
+    def test_recursion_errors_become_protocol_errors(self):
+        client = Client('key', 'model')
+        with patch.object(client, '_post', return_value=b'[' * 1500 + b']' * 1500), \
+                self.assertRaisesRegex(AgentError, 'Invalid response'):
+            client.complete([], [])
+
+    def test_content_parts_and_missing_tool_type_are_accepted(self):
+        class Model:
+            step = 0
+
+            def complete(self, messages, tools):
+                self.step += 1
+                if self.step == 1:
+                    return {'content': None, 'tool_calls': [{'id': '1', 'function': {
+                        'name': 'list_files', 'arguments': '{}'}}]}
+                return {'content': [{'type': 'text', 'text': 'do'},
+                                    {'type': 'output_text', 'text': 'ne'}]}
+
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(run(Model(), Workspace(directory), 'task'), 'done')
+
+    def test_oversized_round_is_rejected_and_duplicate_ids_are_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Workspace(directory)
+
+            class TooMany:
+                def complete(self, messages, tools):
+                    return {'tool_calls': [{'id': str(i), 'function': {
+                        'name': 'list_files', 'arguments': '{}'}} for i in range(129)]}
+
+            with self.assertRaisesRegex(AgentError, '128'):
+                run(TooMany(), workspace, 'task')
+
+            snapshots = []
+
+            class Duplicate:
+                step = 0
+
+                def complete(self, messages, tools):
+                    snapshots.append(messages)
+                    self.step += 1
+                    if self.step == 1:
+                        return {'tool_calls': [{'id': 'same', 'function': {
+                            'name': 'list_files', 'arguments': '{}'}}, {'id': 'same', 'function': {
+                            'name': 'list_files', 'arguments': '{}'}}]}
+                    return {'content': 'done'}
+
+            self.assertEqual(run(Duplicate(), workspace, 'task'), 'done')
+            results = [message['tool_call_id'] for message in snapshots[-1]
+                       if message['role'] == 'tool']
+            self.assertEqual(results, ['same', 'same-2'])
 
     def test_context_limit_must_fit_base_instructions(self):
         class Tiny:
@@ -196,7 +248,7 @@ class CliTests(unittest.TestCase):
             with self.subTest(shell=shell, json=json_style), self.assertRaises(AgentError):
                 parse_checks(shell, json_style)
 
-    @unittest.skipIf(sys.platform == 'win32', 'Regra do shlex (POSIX).')
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX shlex behavior.')
     def test_unterminated_quote_is_reported_as_a_clear_error(self):
         with self.assertRaisesRegex(AgentError, 'unreadable'):
             parse_checks(['a="unterminated'], [])
