@@ -12,6 +12,7 @@ from .arguments import positive, positive_float
 from .platforms import split_command
 from .sensitive import contains_sensitive_content
 from .tools import Workspace
+from .trace import JsonlTrace
 
 
 def parse_checks(shell_style: list[str], json_style: list[str]) -> dict[str, list[str]]:
@@ -55,6 +56,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--check-env', action='append', default=[], metavar='VARIABLE',
                         help='Pass this environment variable to checks (only a minimal, secret-free '
                              'set is passed by default). Repeatable.')
+    parser.add_argument('--trace', metavar='FILE',
+                        help='Write a content-free JSONL trace (tool names, sizes, durations, outcomes) to FILE.')
     parser.add_argument('--max-steps', type=positive, default=12)
     parser.add_argument('--timeout', type=positive_float, default=60,
                         help='Timeout for each check, in seconds.')
@@ -121,8 +124,13 @@ def main(argv: list[str] | None = None) -> int:
             print('Warning: the task text contains credential-like content.', file=sys.stderr)
         for notice in risk_notices(workspace, client):
             print(notice, file=sys.stderr)
-        result = run(client, workspace, args.task, args.max_steps,
-                     notify=lambda name: print(f'Tool: {name}', file=sys.stderr))
+        trace = JsonlTrace(args.trace) if args.trace else None
+        try:
+            result = run(client, workspace, args.task, args.max_steps,
+                         notify=lambda name: print(f'Tool: {name}', file=sys.stderr), trace=trace)
+        finally:
+            if trace:
+                trace.close()
         print(result)
         return 0
     except (AgentError, OSError, ValueError) as exc:

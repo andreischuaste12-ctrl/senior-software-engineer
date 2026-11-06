@@ -13,8 +13,10 @@ import tempfile
 import time
 from typing import Any
 
+from .overview import build_overview
 from .paths import matches_pattern
 from .platforms import process_options, stop_process_tree
+from .references import REFERENCE_NAMES, reference_text
 from .sensitive import contains_sensitive_content, redact_sensitive_text
 from .surfaces import executable_content, execution_surface
 
@@ -25,10 +27,14 @@ MAX_LISTED_FILES = 1000
 MAX_SEARCH_RESULTS = 200
 MAX_SEARCH_BYTES = 32_000_000
 MAX_SEARCH_SECONDS = 5.0
+MAX_LOG_TAIL = 2000
 OUTPUT_LIMIT = 16_000
 OUTPUT_HEAD = 2_000
 
 WINDOWS = sys.platform == 'win32'
+# File names that read_log accepts: debug.log, error_log, access.log.1, npm-debug.log, logs/...
+LOG_NAME = re.compile(r'(?:^|[._-])logs?(?:[._-]|$)', re.IGNORECASE)
+LOG_SUFFIXES = ('.out', '.err', '.trace', '.jsonl', '.ndjson')
 # Credential directories: never accessible.
 SECRET_DIRS = {'.git', '.aws', '.ssh', '.kube', '.gnupg', '.docker', '.azure', '.terraform.d'}
 # Dependencies and caches: never accessible at any depth.
@@ -166,6 +172,14 @@ def uses_crlf(data: bytes) -> bool:
     return crlf > 0 and crlf > data.count(b'\n') - crlf
 
 
+def log_like(relative: str) -> bool:
+    """Return whether a path looks like a log file or lives under a logs directory."""
+    parts = relative.casefold().split('/')
+    name = parts[-1]
+    return bool(LOG_NAME.search(name) or name.endswith(LOG_SUFFIXES) or
+                any(part in {'log', 'logs'} for part in parts[:-1]))
+
+
 def schema(name: str, description: str, properties: dict[str, Any],
            required: list[str]) -> dict[str, Any]:
     return {'type': 'function', 'function': {
@@ -210,6 +224,11 @@ class Workspace:
         if any(not [part for part in pattern.replace('\\', '/').split('/') if part and part != '.']
                for pattern in (*self.deny, *self.allow_files)):
             raise ValueError('Access patterns must contain a path or glob component.')
+
+    @property
+    def checks_visible(self) -> bool:
+        """Checks are hidden during write sessions unless explicitly authorized."""
+        return not self.allow_write or self.allow_check_after_write
 
     def denied(self, relative: str) -> bool:
         return any(matches_pattern(relative.casefold(), pattern.casefold()) for pattern in self.deny)
@@ -265,6 +284,23 @@ class Workspace:
                    '(1-indexed, inclusive); the response includes total_lines.',
                    {'path': {'type': 'string'}, 'start_line': {'type': 'integer', 'minimum': 1},
                     'end_line': {'type': 'integer', 'minimum': 1}}, ['path']),
+            schema('project_overview', 'Inventory the workspace without running anything: languages, '
+                   'manifests, lockfiles, runtime pins, test and CI configuration, instruction files '
+                   '(nearest scope last), and candidate commands inferred from files. Candidates are '
+                   'not verified; partial is true when the scan limit was reached. Call it first.',
+                   {}, []),
+            schema('read_log', 'Read the end of a log file with credential-like content redacted. '
+                   'For log-like names only (debug.log, error_log, logs/...). Returns the last '
+                   'tail_lines lines (default 200) or a start_line/end_line range of the redacted '
+                   'view; no hash is returned and the file cannot be edited through it.',
+                   {'path': {'type': 'string'},
+                    'tail_lines': {'type': 'integer', 'minimum': 1, 'maximum': MAX_LOG_TAIL},
+                    'start_line': {'type': 'integer', 'minimum': 1},
+                    'end_line': {'type': 'integer', 'minimum': 1}}, ['path']),
+            schema('read_reference', 'Read one skill reference document: guidance on ecosystems, '
+                   'debugging, audits, agent diagnosis, knowledge, API currency, or documentation '
+                   'sources. These are not project files.',
+                   {'name': {'type': 'string', 'enum': list(REFERENCE_NAMES)}}, ['name']),
         ]
         if self.allow_write:
             definitions.append(schema(
@@ -281,7 +317,7 @@ class Workspace:
                 {'path': {'type': 'string'}, 'content': {'type': 'string'},
                  'expected_sha256': {'type': ['string', 'null']}},
                 ['path', 'content', 'expected_sha256']))
-        if self.checks and (not self.allow_write or self.allow_check_after_write):
+        if self.checks and self.checks_visible:
             definitions.append(schema(
                 'run_check', 'Run a check defined by the operator. Names: ' +
                 ', '.join(self.checks),
@@ -340,8 +376,8 @@ class Workspace:
                 return {'files': found, 'truncated': True}
         return {'files': found, 'truncated': False}
 
-    def _load(self, relative: str) -> tuple[Path, bytes]:
-        target = self.path(relative)
+    def _open_regular(self, target: Path) -> int:
+        """Open a validated path non-blocking and return a descriptor for a regular, single-link file."""
         if target.is_dir():  # os.open() on a directory succeeds on POSIX but raises on Windows
             raise ValueError('Refused: only regular files with a single link can be accessed.')
         try:
@@ -357,12 +393,15 @@ class Workspace:
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise ValueError('Refused: only regular files with a single link can be accessed.')
-            with os.fdopen(descriptor, 'rb') as stream:
-                descriptor = -1
-                data = stream.read(MAX_EDIT_BYTES + 1)
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
+        except BaseException:
+            os.close(descriptor)
+            raise
+        return descriptor
+
+    def _load(self, relative: str) -> tuple[Path, bytes]:
+        target = self.path(relative)
+        with os.fdopen(self._open_regular(target), 'rb') as stream:
+            data = stream.read(MAX_EDIT_BYTES + 1)
         if len(data) > MAX_EDIT_BYTES:
             raise ValueError(f'File exceeds the {MAX_EDIT_BYTES}-byte limit.')
         if contains_sensitive_content(data):
@@ -402,6 +441,67 @@ class Workspace:
         return {'path': path, 'content': content, 'sha256': digest, 'start_line': start,
                 'end_line': start + returned - 1 if returned else start,
                 'total_lines': len(lines), 'truncated': truncated}
+
+    def read_log(self, path: str, tail_lines: int | None = None, start_line: int | None = None,
+                 end_line: int | None = None) -> dict[str, Any]:
+        """Read a log through redaction. Path rules still apply; only the content refusal is lifted."""
+        target = self.path(path)
+        if not log_like(target.relative_to(self.root).as_posix()):
+            raise ValueError('read_log only reads log-like files; use read_file for other files.')
+        with os.fdopen(self._open_regular(target), 'rb') as stream:
+            size = os.fstat(stream.fileno()).st_size
+            offset = max(0, size - MAX_EDIT_BYTES)
+            stream.seek(offset)
+            data = stream.read(MAX_EDIT_BYTES + 1)[:MAX_EDIT_BYTES]
+        if offset and b'\n' in data:
+            data = data.split(b'\n', 1)[1]  # drop the partial first line of an oversized log
+        if b'\x00' in data:
+            raise ValueError('The file looks binary and cannot be read as a log.')
+        # Redact the whole window first so a multi-line key cannot be split by the line slice.
+        text, redacted = redact_sensitive_text(data.decode('utf-8', errors='replace'))
+        lines = split_lines(text)
+        if start_line is not None or end_line is not None:
+            start = 1 if start_line is None else integer_argument(start_line, 'start_line')
+            end = len(lines) if end_line is None else integer_argument(end_line, 'end_line')
+            if start > end:
+                raise ValueError('start_line cannot be greater than end_line.')
+        else:
+            count = min(200 if tail_lines is None else integer_argument(tail_lines, 'tail_lines'),
+                        MAX_LOG_TAIL)
+            end = len(lines)
+            start = max(1, end - count + 1)
+        chunk = ''.join(lines[start - 1:end])
+        encoded = chunk.encode('utf-8')
+        truncated = len(encoded) > MAX_FILE_BYTES
+        if truncated:  # keep the newest part: that is where failures usually are
+            encoded = encoded[-MAX_FILE_BYTES:]
+            newline = encoded.find(b'\n')
+            if newline >= 0:
+                encoded = encoded[newline + 1:]
+        shown = encoded.decode('utf-8', errors='ignore')
+        returned = len(split_lines(shown))
+        return {'path': path, 'content': shown, 'start_line': end - returned + 1 if returned else start,
+                'end_line': end, 'total_lines': len(lines), 'truncated': truncated,
+                'redacted': redacted, 'earlier_bytes_omitted': offset}
+
+    def read_reference(self, name: str) -> dict[str, Any]:
+        return {'name': name, 'content': reference_text(name)}
+
+    def _manifest(self, relative: str) -> bytes | None:
+        try:
+            return self._load(relative)[1]
+        except (OSError, ValueError):
+            return None
+
+    def project_overview(self) -> dict[str, Any]:
+        paths: list[str] = []
+        partial = False
+        for relative in self._walk('.'):
+            if relative is None:
+                partial = True
+                break
+            paths.append(relative)
+        return build_overview(paths, self._manifest, partial, list(self.checks), not self.checks_visible)
 
     def search_text(self, query: str, pattern: str | None = None, ignore_case: bool = False,
                     max_results: int = 100, directory: str = '.') -> dict[str, Any]:

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0 - 2026-11-06
+
+- Added `project_overview`, a read-only inventory of languages, manifests, lockfiles, runtime
+  pins, test and CI configuration, and instruction files, with candidate commands that are
+  labeled as inferred and never executed.
+- Added `read_log`, which reads the end of a log through credential redaction, and
+  `read_reference`, which exposes the skill's reference documents by exact name.
+- Added loop detection: the same call with the same result three times in ten calls receives
+  a corrective error, and five aborts the run. Parallel duplicates within a round count once.
+- Added `--trace FILE`, a content-free JSONL trace of rounds and tool calls.
+- Added reference documents for debugging, audits (with a severity and confidence report
+  contract and an e-commerce lens), and agent diagnosis; extended the ecosystem reference
+  with PHP/WordPress/WooCommerce, SQL, Shell, C/C++, and infrastructure and CI; added
+  evidence-hygiene and anti-bias guidance to the skill.
+- Added evaluation scenarios E15 (diagnosis from a log that holds a credential) and E16
+  (WordPress handler review), and made E15 and E16 penalize attempted edits.
+- Not adopted: a read-only Git context tool. `git status` and `git diff` can run filters and
+  helpers configured in the repository, which would execute code from an untrusted checkout.
+
 ## 0.7.0 - 2026-11-06
 
 - Fixed a regression where `read_file`, `write_file`, and `replace_in_file` blocked

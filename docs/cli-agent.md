@@ -1,4 +1,4 @@
-# Terminal AI agent — 0.7.0
+# Terminal AI agent — 0.8.0
 
 Python 3.11 or newer is required on Windows, Linux, or macOS. The wheel has no
 runtime dependencies and includes the skill resources. Both `pip install .` and
@@ -115,6 +115,9 @@ concurrent modifications and use a narrow allowlist.
 
 | Tool | Contract |
 | --- | --- |
+| `project_overview` | Read-only inventory: languages, manifests, lockfiles, runtime pins, test and CI configuration, infrastructure files, instruction files (root first, nearest scope last), and candidate commands inferred from files. Candidates are labeled and never executed; `partial` is true when the scan limit was reached. |
+| `read_log` | Reads the end of a log-like file (`debug.log`, `error_log`, `logs/...`) with credential-like content redacted, so a log with one stray token stays usable. Path rules still apply; it returns no hash and cannot be used to edit. |
+| `read_reference` | Reads one skill reference by exact name (ecosystems, debugging, audit, agents, knowledge, API currency, documentation sources). No path is built from the request. |
 | `list_files` | Optional `pattern` and `directory`; patterns may be workspace-relative or directory-relative; up to 1,000 results and 10,000 scanned files. |
 | `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, a 200-result ceiling, a 32 MB scan budget, and a five-second scan budget. The result includes `skipped`, the number of matching files that could not be searched. |
 | `read_file` | UTF-8, up to 64,000 response bytes; line ranges for files up to 2 MB; full-file SHA-256. |
@@ -129,6 +132,18 @@ budget of at most 96 KB, reduced when `--max-context-bytes` is small. Excess rea
 results receive explicit errors and must be requested in smaller ranges. The outcome of
 a tool that changed something (`write_file`, `replace_in_file`, `run_check`) is never
 replaced by that error: bulky check output is shortened instead.
+
+## Diagnosing a run
+
+The agent stops a loop instead of paying for it. When the same call returns the same
+result three times within the last ten calls, the third result is replaced by a corrective
+error; at five, the run aborts. Parallel duplicates inside one round count once, and a
+file re-read once after compaction is not flagged. `--max-steps` still bounds the total.
+
+`--trace FILE` writes a content-free JSONL trace: one event per round (payload size) and per
+tool call (tool name, argument and result sizes, duration, outcome, and a short error), plus a
+final event. It never records file contents, arguments, or the task text, so it can be shared
+when the workspace cannot. The file is created with owner-only permissions where supported.
 
 ## Checks and process limits
 
