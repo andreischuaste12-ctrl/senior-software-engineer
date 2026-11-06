@@ -75,9 +75,13 @@ class PathPolicyTests(ToolsTestCase):
             self.write(name, 'x')
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.workspace.read_file(name)
+        # Windows 8.3 aliases are rejected on Windows only; they are ordinary names on POSIX.
         self.write('GIT~1/config', 'x')
-        with self.assertRaises(ValueError):
+        with patch('sse_agent.tools.WINDOWS', True), self.assertRaises(ValueError):
             self.workspace.read_file('GIT~1/config')
+        self.write('report~1.txt', 'legit')
+        with patch('sse_agent.tools.WINDOWS', False):
+            self.assertEqual(self.workspace.read_file('report~1.txt')['content'], 'legit')
 
     def test_filesystem_and_home_roots_are_rejected(self):
         with self.assertRaisesRegex(ValueError, 'project directory'):
@@ -95,7 +99,9 @@ class PathPolicyTests(ToolsTestCase):
             self.write(name, 'synthetic')
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.workspace.read_file(name)
-        self.write('ordinary.txt', 'ghp_' + 'A' * 32)
+        self.write('ordinary.txt', 'ghp_' + 'aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bD2fH4jL6')
+        self.write('example.txt', 'ghp_' + 'A' * 32)  # an obvious documentation placeholder
+        self.assertEqual(self.workspace.read_file('example.txt')['content'], 'ghp_' + 'A' * 32)
         with self.assertRaisesRegex(ValueError, 'resembles a credential'):
             self.workspace.read_file('ordinary.txt')
 

@@ -1,18 +1,22 @@
 """Tools restricted to the workspace selected by the operator."""
 
 from collections.abc import Iterator, Sequence
+from fnmatch import fnmatchcase
 import hashlib
 import os
 from pathlib import Path, PureWindowsPath
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
 
 from .paths import matches_pattern
 from .platforms import process_options, stop_process_tree
+from .sensitive import contains_sensitive_content, redact_sensitive_text
+from .surfaces import executable_content, execution_surface
 
 MAX_FILE_BYTES = 64_000          # text returned or written by one call
 MAX_EDIT_BYTES = 2_000_000       # largest file that can be ranged, searched, or edited
@@ -24,8 +28,9 @@ MAX_SEARCH_SECONDS = 5.0
 OUTPUT_LIMIT = 16_000
 OUTPUT_HEAD = 2_000
 
+WINDOWS = sys.platform == 'win32'
 # Credential directories: never accessible.
-SECRET_DIRS = {'.git', '.aws', '.ssh', '.kube', '.gnupg', '.docker'}
+SECRET_DIRS = {'.git', '.aws', '.ssh', '.kube', '.gnupg', '.docker', '.azure', '.terraform.d'}
 # Dependencies and caches: never accessible at any depth.
 DEPENDENCY_DIRS = {'.venv', 'venv', 'node_modules', '__pycache__', '.pytest_cache',
                    '.mypy_cache', '.ruff_cache', '.next'}
@@ -40,20 +45,23 @@ SECRET_FILES = {'credentials', 'credentials.json', 'secrets.json', 'id_rsa', 'id
                 'service-account.json', 'application_default_credentials.json',
                 'client_secret.json', 'token.json', '.dockercfg', '.s3cfg', '.boto',
                 '.gitconfig', 'credentials.yml', 'credentials.yaml', 'local_settings.py',
-                'settings.local.php', 'appsettings.production.json'}
-SECRET_RELATIVE_PATHS = {'.config/gh/hosts.yml', '.cargo/credentials.toml',
-                         '.cargo/credentials'}
-EXECUTION_FILENAMES = {'conftest.py', 'setup.py', 'sitecustomize.py', 'noxfile.py',
-                       'makefile', 'package.json', 'composer.json', 'pyproject.toml',
-                       'dockerfile', '.pre-commit-config.yaml', '.gitmodules'}
-EXECUTION_DIRECTORIES = {'.github/workflows', '.vscode', '.devcontainer', '.husky', 'scripts'}
-SENSITIVE_CONTENT = (
-    re.compile(rb'-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'),
-    re.compile(rb'(?<![A-Za-z0-9_])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9_])'),
-    re.compile(rb'(?<![A-Za-z0-9_])github_pat_[A-Za-z0-9_]{20,}(?![A-Za-z0-9_])'),
-    re.compile(rb'(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{20,}(?![A-Za-z0-9_])'),
-    re.compile(rb'(?<![A-Za-z0-9_])xox[baprs]-[A-Za-z0-9-]{20,}(?![A-Za-z0-9_])'),
-)
+                'settings.local.php', 'appsettings.production.json', 'wp-config-local.php',
+                'localsettings.php', '.terraformrc', 'terraform.rc', 'sftp-config.json',
+                'parameters.yml', 'config.inc.php', 'secrets.toml', '.secrets', 'credentials.toml'}
+SECRET_NAME_PATTERNS = ('service-account*.json', 'client_secret*.json', '*.secret', '*.secrets',
+                        'id_rsa*', 'id_ed25519*', 'id_ecdsa*', 'id_dsa*')
+# Paths matched at any depth, component by component.
+SECRET_RELATIVE_PATHS = {'.config/gh/hosts.yml', '.cargo/credentials.toml', '.cargo/credentials',
+                         '.config/rclone/rclone.conf', 'app/etc/env.php',
+                         'sites/default/settings.php', 'sites/default/settings.local.php'}
+SECRET_RELATIVE_DIRS = {'.config/gcloud', '.config/gh', '.config/doctl', '.config/hub'}
+# Workspaces must be project directories: these exact paths (and virtual trees) are refused.
+FORBIDDEN_ROOTS = {'/etc', '/usr', '/var', '/boot', '/bin', '/sbin', '/lib', '/lib32', '/lib64',
+                   '/opt', '/srv', '/mnt', '/media', '/run', '/tmp', '/home', '/root', '/users',
+                   '/library', '/system', '/applications', '/private', '/var/tmp', '/var/log',
+                   '/var/lib', '/var/spool', '/var/mail', '/private/etc', '/private/var',
+                   '/private/tmp', '/private/var/tmp'}  # macOS resolves /etc, /var, /tmp here
+FORBIDDEN_TREES = ('/proc', '/sys', '/dev')
 
 # Environment variables passed to checks (uppercase names; LC_* is also allowed).
 CHECK_ENV_ALLOWLIST = {
@@ -72,31 +80,44 @@ def protected(part: str) -> bool:
         return True
     if lower == '.envrc' or lower == '.env' or lower.startswith('.env.'):
         return lower not in ENV_TEMPLATES
-    if re.fullmatch(r'[^~]{1,6}~[0-9](?:\..*)?', part, re.IGNORECASE):
+    if WINDOWS and re.fullmatch(r'[^~]{1,6}~[0-9](?:\..*)?', part, re.IGNORECASE):
         return True  # reject possible Windows 8.3 aliases such as GIT~1
+    if not lower.endswith('.pub') and any(fnmatchcase(lower, pattern) for pattern in SECRET_NAME_PATTERNS):
+        return True
     return lower.endswith(('.pem', '.key', '.p8', '.ppk', '.p12', '.pfx', '.jks', '.keystore',
                            '.kdbx', '.env', '.tfstate', '.tfvars', '_history')) or (
         '.tfstate.' in lower or lower.endswith('.tfvars.json'))
 
 
 def protected_path(parts: Sequence[str]) -> bool:
-    relative = '/'.join(parts).casefold()
-    return relative in SECRET_RELATIVE_PATHS or any(protected(part) for part in parts)
+    padded = '/' + '/'.join(parts).casefold() + '/'
+    return (any(padded.endswith(f'/{path}/') for path in SECRET_RELATIVE_PATHS) or
+            any(f'/{directory}/' in padded for directory in SECRET_RELATIVE_DIRS) or
+            any(protected(part) for part in parts))
 
 
-def execution_surface(relative: str) -> bool:
-    """Return whether writing this path can trigger common automation."""
-    normalized = relative.replace('\\', '/').casefold().strip('/')
-    parts = normalized.split('/')
-    return (parts[-1] in EXECUTION_FILENAMES or
-            any(normalized == directory or normalized.startswith(directory + '/') or
-                f'/{directory}/' in f'/{normalized}/'
-                for directory in EXECUTION_DIRECTORIES) or
-            parts[-1].endswith(('.sh', '.ps1', '.bat', '.cmd')))
-
-
-def contains_sensitive_content(data: bytes) -> bool:
-    return any(pattern.search(data) for pattern in SENSITIVE_CONTENT)
+def unsafe_root(root: Path, home: Path | None) -> str | None:
+    """Explain why a path must not be used as a workspace, or return None."""
+    posix = root.as_posix().casefold().rstrip('/')
+    if root == Path(root.anchor):
+        return 'a filesystem root'
+    if posix in FORBIDDEN_ROOTS or any(posix == tree or posix.startswith(tree + '/')
+                                       for tree in FORBIDDEN_TREES):
+        return 'a system directory'
+    if WINDOWS:
+        drive = root.anchor.replace('\\', '/').casefold()
+        forbidden = {drive + name for name in ('users', 'windows', 'program files',
+                                               'program files (x86)', 'programdata')}
+        for variable in ('SystemRoot', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramData'):
+            if os.environ.get(variable):
+                forbidden.add(Path(os.environ[variable]).as_posix().casefold().rstrip('/'))
+        if posix in forbidden:
+            return 'a system directory'
+    if home is not None and (root == home or home.is_relative_to(root)):
+        return 'a home directory or one of its parents'
+    if any(part.casefold() in SECRET_DIRS | DEPENDENCY_DIRS for part in root.parts):
+        return 'inside a protected directory'
+    return None
 
 
 def artifact_name(name: str, parent: Path) -> bool:
@@ -165,6 +186,7 @@ class Workspace:
                  pass_env: Sequence[str] = (), deny: Sequence[str] = (),
                  allow_files: Sequence[str] = (), allow_executable_write: bool = False,
                  allow_check_after_write: bool = False) -> None:
+        requested = Path(os.path.abspath(root))  # as spelled: symlinks such as /etc stay visible
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise ValueError('The workspace must be a directory.')
@@ -172,8 +194,9 @@ class Workspace:
             home = Path.home().resolve()
         except (OSError, RuntimeError):
             home = None
-        if self.root == Path(self.root.anchor) or (home is not None and self.root == home):
-            raise ValueError('Choose a project directory, not a filesystem or home-directory root.')
+        reason = unsafe_root(requested, home) or unsafe_root(self.root, home)
+        if reason:
+            raise ValueError(f'Choose a project directory, not {reason}.')
         self.allow_write = allow_write
         self.allow_executable_write = allow_executable_write
         self.allow_check_after_write = allow_check_after_write
@@ -228,8 +251,10 @@ class Workspace:
                    'or to directory.',
                    {'pattern': {'type': 'string'}, 'directory': {'type': 'string'}}, []),
             schema('search_text', 'Search files for literal text (like grep -F). '
-                   'Returns the path, line, and excerpt. pattern may be relative to the '
-                   'workspace or to directory. Use before reading whole files.',
+                   'Returns the path, line, and excerpt, plus skipped: the number of matching files '
+                   'that could not be searched (binary, oversized, or credential-like). '
+                   'pattern may be relative to the workspace or to directory. '
+                   'Use before reading whole files.',
                    {'query': {'type': 'string'}, 'pattern': {'type': 'string'},
                     'directory': {'type': 'string'},
                     'ignore_case': {'type': 'boolean'},
@@ -317,15 +342,21 @@ class Workspace:
 
     def _load(self, relative: str) -> tuple[Path, bytes]:
         target = self.path(relative)
+        if target.is_dir():  # os.open() on a directory succeeds on POSIX but raises on Windows
+            raise ValueError('Refused: only regular files with a single link can be accessed.')
         try:
-            flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+            # O_NONBLOCK keeps a FIFO from blocking open(); the regular-file check follows.
+            flags = (os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) |
+                     getattr(os, 'O_NONBLOCK', 0))
             descriptor = os.open(target, flags)
+        except FileNotFoundError:
+            raise ValueError('File not found.') from None
         except OSError:
-            raise ValueError('Regular file not found.') from None
+            raise ValueError('The file could not be opened.') from None
         try:
             info = os.fstat(descriptor)
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise ValueError('Regular file not found.')
+                raise ValueError('Refused: only regular files with a single link can be accessed.')
             with os.fdopen(descriptor, 'rb') as stream:
                 descriptor = -1
                 data = stream.read(MAX_EDIT_BYTES + 1)
@@ -382,24 +413,27 @@ class Workspace:
         needle = query.casefold() if ignore_case else query
         matches: list[dict[str, Any]] = []
         scanned_bytes = 0
+        skipped = 0
         started = time.monotonic()
         start = self.path(directory, directory=True)
         for relative in self._walk(directory):
             if relative is None:
-                return {'matches': matches, 'truncated': True}
+                return {'matches': matches, 'truncated': True, 'skipped': skipped}
             scoped = Path(relative).relative_to(start.relative_to(self.root)).as_posix()
             if not (matches_pattern(relative, pattern) or matches_pattern(scoped, pattern)):
                 continue
             if scanned_bytes >= MAX_SEARCH_BYTES or time.monotonic() - started >= MAX_SEARCH_SECONDS:
-                return {'matches': matches, 'truncated': True}
+                return {'matches': matches, 'truncated': True, 'skipped': skipped}
             try:
                 _, data = self._load(relative)
                 scanned_bytes += len(data)
-                if len(data) > MAX_EDIT_BYTES or b'\x00' in data:
+                if b'\x00' in data:
+                    skipped += 1
                     continue
                 text = data.decode('utf-8')
             except (OSError, ValueError):
-                continue  # unreadable, binary, or outside policy: ignore silently
+                skipped += 1  # unreadable, binary, oversized, or credential-like: report, do not hide
+                continue
             for number, line in enumerate(text.split('\n'), 1):
                 compared = line.casefold() if ignore_case else line
                 if needle in compared:
@@ -412,8 +446,8 @@ class Workspace:
                     matches.append({'path': relative, 'line': number,
                                     'text': line.rstrip('\r')[begin:begin + 200]})
                     if len(matches) >= limit:
-                        return {'matches': matches, 'truncated': True}
-        return {'matches': matches, 'truncated': False}
+                        return {'matches': matches, 'truncated': True, 'skipped': skipped}
+        return {'matches': matches, 'truncated': False, 'skipped': skipped}
 
     # ------------------------------------------------------------------ writes
 
@@ -421,10 +455,21 @@ class Workspace:
         if not self.allow_write:
             raise ValueError('Writing is not authorized; use --allow-write.')
 
-    def _require_write_path(self, relative: str) -> None:
-        if execution_surface(relative) and not self.allow_executable_write:
-            raise ValueError('Writing automation or executable surfaces requires '
-                             '--allow-executable-write.')
+    EXECUTABLE_MESSAGE = ('Writing automation, scripts, or executable files requires '
+                          '--allow-executable-write.')
+
+    def _require_write_path(self, target: Path) -> None:
+        """Check the normalized, validated path, never the raw string supplied by the model."""
+        if execution_surface(target.relative_to(self.root).as_posix()) and not self.allow_executable_write:
+            raise ValueError(self.EXECUTABLE_MESSAGE)
+
+    def _require_executable_content(self, target: Path, current: bytes | None, data: bytes) -> None:
+        # Scripts are recognized by their interpreter line. The file mode is deliberately not
+        # used: NTFS/drvfs mounts (for example WSL's /mnt/c) report every file as executable.
+        if self.allow_executable_write:
+            return
+        if executable_content(data) or (current is not None and executable_content(current)):
+            raise ValueError(self.EXECUTABLE_MESSAGE)
 
     def _replace_existing(self, relative: str, target: Path, data: bytes,
                           expected_sha256: str) -> None:
@@ -450,19 +495,20 @@ class Workspace:
     def write_file(self, path: str, content: str,
                    expected_sha256: str | None) -> dict[str, Any]:
         self._require_write()
-        self._require_write_path(path)
         if not isinstance(content, str):
             raise ValueError('content must be a string.')
         data = content.encode('utf-8')
         if len(data) > MAX_FILE_BYTES:
             raise ValueError(f'Content exceeds the {MAX_FILE_BYTES}-byte limit.')
         target = self.path(path)
+        self._require_write_path(target)
         if not target.parent.is_dir():
             raise ValueError('The parent directory must already exist; it is not created automatically.')
         if target.exists():
             _, current = self._load(path)
             if not expected_sha256 or expected_sha256 != hashlib.sha256(current).hexdigest():
                 raise ValueError('File changed or was not read; read it again before writing.')
+            self._require_executable_content(target, current, data)
             if uses_crlf(current) and b'\r' not in data:
                 data = data.replace(b'\n', b'\r\n')  # preserve the file's line endings
                 if len(data) > MAX_FILE_BYTES:
@@ -475,6 +521,7 @@ class Workspace:
         else:
             if expected_sha256 is not None:
                 raise ValueError('File does not exist; pass null as expected_sha256 to create it.')
+            self._require_executable_content(target, None, data)
             with target.open('xb') as stream:
                 stream.write(data)
         return {'path': path, 'sha256': hashlib.sha256(data).hexdigest(), 'written': True}
@@ -482,7 +529,7 @@ class Workspace:
     def replace_in_file(self, path: str, old: str, new: str, expected_sha256: str,
                         replace_all: bool = False) -> dict[str, Any]:
         self._require_write()
-        self._require_write_path(path)
+        self._require_write_path(self.path(path))
         if not isinstance(replace_all, bool):
             raise ValueError('replace_all must be a boolean.')
         if not isinstance(old, str) or not old or not isinstance(new, str):
@@ -510,6 +557,7 @@ class Workspace:
         if result_size > MAX_EDIT_BYTES:
             raise ValueError(f'Result exceeds the {MAX_EDIT_BYTES}-byte limit.')
         data = text.replace(old, new, replacements).encode('utf-8')
+        self._require_executable_content(target, current, data)
         self._replace_existing(path, target, data, expected_sha256)
         return {'path': path, 'sha256': hashlib.sha256(data).hexdigest(), 'written': True,
                 'replacements': replacements}
@@ -545,8 +593,10 @@ class Workspace:
                 text = (head.decode('utf-8', errors='replace') +
                         f'\n[... {size - OUTPUT_LIMIT} bytes omitted ...]\n' +
                         tail.decode('utf-8', errors='replace'))
+        text, redacted = redact_sensitive_text(text)
         return {'name': name, 'exit_code': process.returncode, 'timed_out': timed_out,
-                'output': text, 'truncated': size > OUTPUT_LIMIT, 'output_bytes': size}
+                'output': text, 'truncated': size > OUTPUT_LIMIT, 'output_bytes': size,
+                'redacted': redacted}
 
     def execute(self, name: str, arguments: Any) -> dict[str, Any]:
         enabled = {item['function']['name'] for item in self.definitions()}
@@ -559,6 +609,10 @@ class Workspace:
             return result
         except (ValueError, TypeError) as error:
             return {'error': str(error)}
+        except FileNotFoundError:
+            return {'error': 'File not found.'}
+        except PermissionError:
+            return {'error': 'Permission denied.'}
         except OSError:
             return {'error': 'The file operation failed.'}
         except Exception as error:  # an unexpected tool failure must not crash the paid task

@@ -1,4 +1,4 @@
-# Terminal AI agent — 0.6.0
+# Terminal AI agent — 0.7.0
 
 Python 3.11 or newer is required on Windows, Linux, or macOS. The wheel has no
 runtime dependencies and includes the skill resources. Both `pip install .` and
@@ -49,6 +49,29 @@ With opt-in, the task, instructions, read files, and check results may be sent t
 the provider and may incur charges. File filters cannot identify every embedded
 secret. Review the provider's terms and the selected data before enabling transfer.
 
+Before any request, the CLI prints what the run authorizes: the endpoint host,
+whether a file filter is configured, and any write or check risk you enabled. A task
+text that contains a recognizable credential is refused for an external endpoint
+(for a local endpoint it only warns).
+
+## Privacy and risk checklist
+
+- **Prefer a local model.** Confirm that the local server does not forward data or
+  collect telemetry; the CLI cannot verify that.
+- **Do not use `--allow-remote` with private code or confidential data** without
+  reviewing the provider's retention, training, and transfer terms.
+- **Limit what the agent can read.** Use `--allow-file` for an allowlist and `--deny`
+  for sensitive directories (for example `--deny "private/**" --deny "secrets/"`).
+  A trailing slash such as `secrets/` matches that directory at any depth; `./secrets/`
+  matches only the workspace root.
+- **Keep secrets out of prompts, files, and check output.** Built-in filters block many
+  credential files and token formats, but no filter detects every secret.
+- **Do not authorize checks on untrusted code.** Checks run with your permissions and are
+  not a sandbox. Write sessions hide checks unless `--allow-check-after-write` is set, and
+  `--allow-executable-write` lets the model change automation files and scripts. Enable
+  them only for repositories and edits you trust.
+- **Use OS-level isolation** (a container or VM without credentials) for untrusted projects.
+
 ## File access
 
 - `--deny GLOB` excludes matching paths from every file tool.
@@ -56,10 +79,21 @@ secret. Review the provider's terms and the selected data before enabling transf
   `--deny` still take precedence.
 - Both `/` and `\` are accepted. `**` matches zero or more directories.
   Access filters are case-insensitive for consistent Windows and POSIX protection.
-- Known credential files, private-key formats, Terraform state/variable files,
-  and `.git`, `.aws`, `.ssh`, `.kube`, `.gnupg`, and `.docker` are blocked.
-- Recognizable private-key and common provider-token signatures cause the entire
-  file to be refused. This is defense in depth, not complete secret detection.
+- Known credential files, key and keystore formats, Terraform state/variable files,
+  CMS and framework configuration that holds database credentials (for example
+  `wp-config*.php`, `app/etc/env.php`, `sites/default/settings.php`), and the
+  `.git`, `.aws`, `.ssh`, `.kube`, `.gnupg`, `.docker`, and `.azure` directories are
+  blocked. Relative credential paths such as `.config/gh/hosts.yml` match at any depth.
+- Recognizable credential content causes the entire file to be refused: private keys
+  (with a key body), AWS, GitHub, GitLab, Slack, OpenAI, Anthropic, Stripe, Google,
+  npm, SendGrid, Azure storage, Shopify, WooCommerce, and Mercado Pago tokens, JWTs,
+  and database URLs with real passwords. Obvious documentation placeholders (such as
+  `AKIA...EXAMPLE` or a token made of one repeated character) are not flagged.
+  `search_text` counts the files it could not search in `skipped`, and check output is
+  redacted. This is defense in depth, not complete secret detection.
+- A workspace must be a project directory: filesystem roots, system directories, a home
+  directory or any of its parents, and directories inside credential or dependency
+  folders (such as `.ssh` or `.git`) are rejected.
 - `.env.example`, `.env.sample`, and `.env.template` are readable; verify that
   templates contain no real secrets.
 - `node_modules`, `.next`, virtual environments, and tool caches are always blocked.
@@ -70,7 +104,9 @@ secret. Review the provider's terms and the selected data before enabling transf
   directories cannot be enumerated directly, although an explicitly named file
   remains readable unless denied by the operator.
 - Symlinks, hardlinks, junctions/reparse points, FIFOs, device files, parent
-  traversal, NTFS streams, and reserved Windows device names are rejected.
+  traversal, NTFS streams, and reserved Windows device names are rejected; opening
+  is non-blocking, so a FIFO is refused instead of hanging the agent. Windows 8.3
+  aliases such as `GIT~1` are rejected on Windows only.
 
 These rules do not sandbox checks or scan source text for all secrets. Avoid
 concurrent modifications and use a narrow allowlist.
@@ -80,17 +116,19 @@ concurrent modifications and use a narrow allowlist.
 | Tool | Contract |
 | --- | --- |
 | `list_files` | Optional `pattern` and `directory`; patterns may be workspace-relative or directory-relative; up to 1,000 results and 10,000 scanned files. |
-| `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, a 200-result ceiling, a 32 MB scan budget, and a five-second scan budget. |
+| `search_text` | Literal query with optional workspace-relative or directory-relative pattern, directory, case folding, a 200-result ceiling, a 32 MB scan budget, and a five-second scan budget. The result includes `skipped`, the number of matching files that could not be searched. |
 | `read_file` | UTF-8, up to 64,000 response bytes; line ranges for files up to 2 MB; full-file SHA-256. |
 | `replace_in_file` | Requires `--allow-write`, the read hash, and a unique old string unless `replace_all`; preserves CRLF and an existing UTF-8 BOM. |
-| `write_file` | Requires `--allow-write`; creates under an existing parent or replaces with a valid hash. Common execution surfaces require `--allow-executable-write`. |
-| `run_check` | Runs only an operator-defined argument array; returns exit status, timeout, and bounded output. Hidden during write sessions unless `--allow-check-after-write` is present. |
+| `write_file` | Requires `--allow-write`; creates under an existing parent or replaces with a valid hash. Automation files, scripts, and any file with an interpreter line require `--allow-executable-write`. |
+| `run_check` | Runs only an operator-defined argument array; returns exit status, timeout, and bounded output with credential-like content redacted. Hidden during write sessions unless `--allow-check-after-write` is present. |
 
 A response may request at most 128 tool calls. The first eight are executed
 sequentially; excess calls receive paired errors and can be requested later. Each
-round is fully validated before local effects begin. Tool results have a 96 KB
-per-round budget; excess results receive explicit errors and must be requested in
-smaller ranges.
+round is fully validated before local effects begin. Tool results have a per-round
+budget of at most 96 KB, reduced when `--max-context-bytes` is small. Excess read
+results receive explicit errors and must be requested in smaller ranges. The outcome of
+a tool that changed something (`write_file`, `replace_in_file`, `run_check`) is never
+replaced by that error: bulky check output is shortened instead.
 
 ## Checks and process limits
 
@@ -104,8 +142,12 @@ Checks run with their normal OS permissions and can write even without
 `--allow-write`. They are not sandboxed. When writes are enabled, checks are hidden
 unless `--allow-check-after-write` explicitly authorizes executing code after
 model edits. Even ordinary source files can become executable through a configured
-test or build command. Common automation files and scripts also require
-`--allow-executable-write` before the file tools can change them. A minimal environment is passed;
+test or build command. Automation files and scripts (CI and editor configuration,
+build manifests, test hooks, shell scripts, files under `scripts/`, `bin/`, and similar)
+and any file that starts with an interpreter line also require `--allow-executable-write`
+before the file tools can change them; the rule is applied to the normalized path, so
+`.github//workflows/x.yml` is covered. File permissions are not used, because NTFS mounts
+report every file as executable. A minimal environment is passed;
 `--check-env NAME` opts into another variable, but API keys are never forwarded.
 
 Timeout termination uses a POSIX process group or `taskkill /T /F` on Windows.

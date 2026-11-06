@@ -28,6 +28,18 @@ and project capacity. Good-faith research that avoids privacy violations, data
 destruction, persistence, service disruption, and access beyond what was
 authorized is welcome.
 
+## Privacy and risk checklist
+
+- External providers receive data only after `--allow-remote`, and then they may receive
+  the task, instructions, files the agent reads, and check output.
+- Prefer a local model, and confirm that the local server does not forward data or collect
+  telemetry.
+- Restrict access with `--allow-file` and `--deny`; keep secrets out of prompts, files, and
+  check output. File filters and content signatures are defense in depth, not complete
+  secret detection.
+- Checks are OS processes with your permissions, not a sandbox. Do not authorize checks or
+  automation-file writes on untrusted code.
+
 ## Security boundary
 
 The CLI is a local development tool, not a sandbox. Its file filters reduce

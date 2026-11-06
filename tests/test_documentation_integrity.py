@@ -31,6 +31,15 @@ class DocumentationIntegrityTests(unittest.TestCase):
                          {'happy-path', 'edge-case', 'negative-trigger', 'security-abuse',
                           'regression-guard'})
 
+    def test_version_is_consistent_across_code_changelog_and_guide(self):
+        from sse_agent import __version__
+        changelog = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8')
+        newest = re.search(r'^## (\S+) - ', changelog, re.MULTILINE)
+        self.assertIsNotNone(newest)
+        self.assertEqual(newest.group(1), __version__)
+        guide = (ROOT / 'docs/cli-agent.md').read_text(encoding='utf-8')
+        self.assertIn(f'# Terminal AI agent — {__version__}', guide)
+
     def test_relative_markdown_links_resolve(self):
         broken = []
         for document in ROOT.rglob('*.md'):

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.0 - 2026-11-06
+
+- Fixed a regression where `read_file`, `write_file`, and `replace_in_file` blocked
+  forever on a FIFO: files are now opened non-blocking and refused unless regular.
+- Normalized the path before classifying execution surfaces (closing a `.github//workflows`
+  bypass), widened the list of automation files and scripts, and required the opt-in for
+  files that start with an interpreter line. File mode is deliberately not used because
+  NTFS mounts report every file as executable.
+- Broadened credential defenses: more provider and framework signatures (including
+  OpenAI, Anthropic, Stripe, Google, JWT, database URLs, Shopify, WooCommerce, and Mercado
+  Pago), documentation placeholders ignored, check output redacted, and `search_text`
+  reports files it skipped instead of a false "no match". Protected relative paths and
+  name patterns now match at any depth.
+- Rejected system directories, home directories and their parents, and workspaces inside
+  credential or dependency folders. The 8.3 alias rule applies on Windows only.
+- Tool results that changed something are never replaced by the per-round limit message;
+  the budget now follows `--max-context-bytes`, so a small limit no longer fails after a
+  paid call.
+- Tolerated missing call ids and non-text content parts. Distinct file errors no longer
+  expose host paths.
+- Added risk notices naming the endpoint and the enabled write and check risks, refused
+  credential-like task text for external endpoints, and documented a privacy checklist.
+- Hardened the E05 canary (now in a readable file) and E06 (rejects denials of the failure).
+
 ## 0.6.0 - 2026-11-06
 
 - Separated write authorization from the higher-risk authorization to change
