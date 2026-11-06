@@ -262,6 +262,8 @@ class CliTests(unittest.TestCase):
             with self.subTest(option=option), patch('sse_agent.__main__.Client') as client, \
                     patch('sse_agent.__main__.run', return_value='ok'), \
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                client.return_value.endpoint = 'http://127.0.0.1:1234/v1/chat/completions'
+                client.return_value.local = True
                 self.assertEqual(main(['task', *option]), 0)
                 self.assertEqual(client.call_args.kwargs['retries'], expected)
 

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 import contextlib
+import copy
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 import json
@@ -15,6 +16,10 @@ RETRY_STATUS = {429, 500, 502, 503, 504}
 MAX_RETRY_DELAY = 30.0
 CONTEXT_RESERVE = 8_000
 MAX_ROUND_TOOL_RESULT_BYTES = 96_000
+MIN_ROUND_BUDGET = 4_000
+MIN_EFFECTFUL_ROOM = 2_000
+# Tools whose outcome must never be discarded: the effect already happened.
+EFFECTFUL_TOOLS = {'write_file', 'replace_in_file', 'run_check'}
 DEFAULT_BASE_URL = 'http://127.0.0.1:1234/v1'
 # Fields from old tool results that survive context compaction.
 KEEP_KEYS = ('path', 'sha256', 'written', 'replacements', 'name', 'exit_code',
@@ -127,8 +132,10 @@ def normalize_content(content: Any) -> str | None:
     if isinstance(content, list):
         parts: list[str] = []
         for part in content:
-            if not isinstance(part, dict) or part.get('type') not in {'text', 'output_text'}:
+            if not isinstance(part, dict):
                 raise ValueError('invalid content part')
+            if part.get('type') not in {'text', 'output_text'}:
+                continue  # refusals, images, and reasoning parts carry no assistant text
             text = part.get('text')
             if not isinstance(text, str):
                 raise ValueError('invalid content text')
@@ -226,6 +233,34 @@ def compact_history(messages: list[dict[str, Any]], tools: list[dict[str, Any]],
                 shrink(message)
 
 
+def round_result_budget(messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+                        max_payload: int) -> int:
+    """Bytes available for this round's results.
+
+    The configured context minus the smallest possible history, which is every round older
+    than the current one reduced to metadata. This keeps a small --max-context-bytes from
+    failing after a paid call, instead of relying on a fixed ceiling.
+    """
+    floor = copy.deepcopy(messages)
+    compact_history(floor, tools, 0, len(floor) - 1)
+    available = max_payload - CONTEXT_RESERVE - payload_size(floor, tools)
+    return max(MIN_ROUND_BUDGET, min(MAX_ROUND_TOOL_RESULT_BYTES, available))
+
+
+def fit_effectful_result(result: dict[str, Any], room: int) -> str:
+    """Never replace the outcome of a tool that already ran; shorten bulky output instead."""
+    encoded = json.dumps(result, ensure_ascii=False)
+    output = result.get('output')
+    if len(encoded.encode('utf-8')) <= room or not isinstance(output, str):
+        return encoded
+    characters = max((room - 600) // 4, 100)  # conservative: up to four bytes per character
+    head = characters // 4
+    shortened = {**result, 'truncated': True,
+                 'output': f'{output[:head]}\n[... shortened to fit the per-round budget ...]\n'
+                           f'{output[-(characters - head):]}'}
+    return json.dumps(shortened, ensure_ascii=False)
+
+
 def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
         notify: Callable[[str], None] | None = None) -> str:
     tools = workspace.definitions()
@@ -256,13 +291,15 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
         parsed = []
         normalized_calls = []
         ids = set()
-        for call in calls:
+        for position, call in enumerate(calls):
             try:
-                call_id = call['id']
+                call_id = call.get('id')
+                if call_id is None or call_id == '':
+                    call_id = f'call_{position}'  # some local servers omit ids
                 function = call['function']
                 name = function['name']
                 if (call.get('type', 'function') != 'function' or not isinstance(call_id, str) or
-                        not call_id or not isinstance(name, str)):
+                        not isinstance(name, str)):
                     raise ValueError('Invalid call')
                 original_id = call_id
                 suffix = 2
@@ -277,9 +314,10 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
                 parsed.append((call_id, name, arguments))
                 normalized_calls.append({'id': call_id, 'type': 'function', 'function': {
                     'name': name, 'arguments': canonical_arguments}})
-            except (KeyError, TypeError, ValueError, RecursionError):
+            except (KeyError, TypeError, ValueError, AttributeError, RecursionError):
                 raise AgentError('Malformed tool call; the round was not executed.') from None
         messages.append({'role': 'assistant', 'content': content, 'tool_calls': normalized_calls})
+        budget = round_result_budget(messages, tools, max_payload)
         result_bytes = 0
         for index, (call_id, name, arguments) in enumerate(parsed):
             if notify and index < 8:
@@ -292,10 +330,13 @@ def run(client: Any, workspace: Any, task: str, max_steps: int = 12,
             except (TypeError, ValueError, RecursionError):
                 encoded = json.dumps({'error': 'The tool returned an invalid result.'})
             size = len(encoded.encode('utf-8'))
-            if result_bytes + size > MAX_ROUND_TOOL_RESULT_BYTES:
-                encoded = json.dumps({'error': 'The per-round tool-result limit was reached. '
-                                      'Request fewer files or smaller line ranges.'})
-                size = len(encoded)
+            if result_bytes + size > budget:
+                if index < 8 and name in EFFECTFUL_TOOLS and isinstance(result, dict):
+                    encoded = fit_effectful_result(result, max(budget - result_bytes, MIN_EFFECTFUL_ROOM))
+                else:
+                    encoded = json.dumps({'error': 'The per-round tool-result limit was reached. '
+                                          'Request fewer files or smaller line ranges.'})
+                size = len(encoded.encode('utf-8'))
             result_bytes += size
             messages.append({'role': 'tool', 'tool_call_id': call_id, 'content': encoded})
     raise AgentError('Round limit reached; the task is incomplete. Review local changes.')

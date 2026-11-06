@@ -4,11 +4,13 @@ import argparse
 import json
 import os
 import sys
+from urllib import parse
 
 from . import __version__
 from .agent import DEFAULT_BASE_URL, MAX_PAYLOAD, AgentError, Client, run
 from .arguments import positive, positive_float
 from .platforms import split_command
+from .sensitive import contains_sensitive_content
 from .tools import Workspace
 
 
@@ -66,6 +68,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def risk_notices(workspace: Workspace, client: Client) -> list[str]:
+    """Explain, before any data is sent, what this particular run authorizes."""
+    host = parse.urlsplit(client.endpoint).hostname
+    if client.local:
+        notices = [f'Read files and the task will be sent to the local endpoint {host}. Confirm that '
+                   'the server does not forward data or collect telemetry.']
+    else:
+        notices = [f'EXTERNAL ENDPOINT {host}: the task, instructions, every file the agent reads, and '
+                   'check output may be sent to this provider and may incur charges. Filters cannot '
+                   'detect every secret.']
+        if not workspace.allow_files and not workspace.deny:
+            notices.append('No --allow-file or --deny filter is configured; consider limiting file access.')
+    if workspace.checks:
+        if workspace.allow_write and not workspace.allow_check_after_write:
+            notices.append('Checks are disabled in this write session unless --allow-check-after-write is set.')
+        else:
+            notices.append('Authorized checks execute local code with your permissions; they are not a sandbox.')
+    if workspace.allow_check_after_write:
+        notices.append('WARNING: checks may execute code written by the model.')
+    if workspace.allow_executable_write:
+        notices.append('WARNING: the model may change automation files, scripts, and build manifests.')
+    return notices
+
+
 def main(argv: list[str] | None = None) -> int:
     # Normal CLI invocation, including the installed sse-agent entry point.
     if argv is None:
@@ -88,9 +114,13 @@ def main(argv: list[str] | None = None) -> int:
                         os.environ.get('SSE_BASE_URL', DEFAULT_BASE_URL),
                         args.api_timeout, args.max_context_bytes, retries=args.api_retries,
                         allow_remote=args.allow_remote)
-        print('Read files and the task will be sent to the configured endpoint. '
-              'Authorized checks execute local code; during write sessions they are disabled '
-              'unless --allow-check-after-write is set.', file=sys.stderr)
+        if contains_sensitive_content(args.task.encode('utf-8')):
+            if not client.local:
+                raise AgentError('The task text contains credential-like content. Remove it before '
+                                 'sending the task to an external API.')
+            print('Warning: the task text contains credential-like content.', file=sys.stderr)
+        for notice in risk_notices(workspace, client):
+            print(notice, file=sys.stderr)
         result = run(client, workspace, args.task, args.max_steps,
                      notify=lambda name: print(f'Tool: {name}', file=sys.stderr))
         print(result)

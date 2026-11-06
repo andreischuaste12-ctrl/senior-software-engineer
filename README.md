@@ -49,6 +49,23 @@ The CI matrix covers Windows, Ubuntu, and macOS. Install the standalone CLI with
 `py -3 -m pip install .`. The skill and its references are included in the wheel.
 See the [changelog](CHANGELOG.md) and [release process](docs/releases.md).
 
+## Privacy and risk
+
+External API use is never automatic: it needs an HTTPS endpoint and `--allow-remote`.
+When you opt in, the task, instructions, files the agent reads, and check output may be
+sent to the provider. Filters block many credential files and token formats but cannot
+detect every secret, and checks run with your permissions and are not a sandbox.
+
+- Prefer a local model and confirm the server does not forward data or collect telemetry.
+- Do not use `--allow-remote` with private code or confidential data without reviewing
+  the provider's terms.
+- Limit access with `--allow-file` and `--deny`; keep secrets out of prompts and files.
+- Do not authorize checks (`--allow-check-after-write`) or automation-file writes
+  (`--allow-executable-write`) on untrusted code.
+
+The [CLI guide](docs/cli-agent.md#privacy-and-risk-checklist) and the
+[security policy](SECURITY.md) describe the controls and their limits.
+
 ## Use the skill
 
 The [senior-software-engineer skill](skills/senior-software-engineer/SKILL.md)
