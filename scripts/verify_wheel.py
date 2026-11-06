@@ -21,7 +21,7 @@ def main() -> None:
                    'from importlib.resources import files; '
                    'assert "# Senior Software Engineer" in instructions(Workspace(".")); '
                    'assert files("sse_skill").joinpath("NOTICE").is_file(); '
-                   'assert files("sse_skill").joinpath("references", "api-currency.md").is_file(); '
+                   'assert files("sse_skill").joinpath("references").joinpath("api-currency.md").is_file(); '
                    'print("Wheel instalado e recursos disponíveis fora do checkout.")')
         subprocess.run([str(python), '-I', '-c', command], cwd=directory, check=True)
         subprocess.run([str(python), '-I', '-m', 'sse_agent.evals', 'list'], cwd=directory, check=True)
